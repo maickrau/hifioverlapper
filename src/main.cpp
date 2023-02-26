@@ -1,9 +1,8 @@
 #include <mutex>
-#include <unordered_set>
-#include <unordered_map>
 #include <iostream>
 #include <vector>
 #include <string>
+#include <phmap.h>
 #include "FastHasher.h"
 #include "ReadHelper.h"
 
@@ -137,7 +136,7 @@ public:
 		return firstNumberOrVectorIndex.size();
 	}
 private:
-	std::unordered_map<uint64_t, uint32_t> firstNumberOrVectorIndex;
+	phmap::flat_hash_map<uint64_t, uint32_t> firstNumberOrVectorIndex;
 	std::vector<std::vector<uint32_t>> numbers;
 };
 
@@ -172,7 +171,7 @@ IterationInfo iterateMatches(size_t numThreads, size_t k, size_t numWindows, siz
 			readName = readNames.size();
 			readNames.push_back(read.readName.first);
 		}
-		std::unordered_set<size_t> hashesHere;
+		phmap::flat_hash_set<size_t> hashesHere;
 		iterateWindowchunks(seq, k, numWindows, windowSize, [&hashesHere, readName](const std::vector<uint64_t>& hashes)
 		{
 			bool fw = true;
@@ -233,7 +232,7 @@ IterationInfo iterateMatches(size_t numThreads, size_t k, size_t numWindows, siz
 	size_t totalMatches = 0;
 	for (size_t i = 0; i < hashesPerRead.size(); i++)
 	{
-		std::unordered_set<size_t> matches;
+		phmap::flat_hash_set<size_t> matches;
 		for (auto hash : hashesPerRead[i])
 		{
 			for (auto read : numbers[hash])
