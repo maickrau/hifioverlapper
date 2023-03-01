@@ -2,6 +2,7 @@
 #include <iostream>
 #include <vector>
 #include <string>
+#include "ReadStorage.h"
 #include "MatchIndex.h"
 
 int main(int argc, char** argv)
@@ -16,11 +17,16 @@ int main(int argc, char** argv)
 		readFiles.emplace_back(argv[i]);
 	}
 	MatchIndex matchIndex { k, numWindows, windowSize };
+	ReadStorage storage;
 	for (auto file : readFiles)
 	{
-		matchIndex.addMatchesFromFile(numThreads, file);
+		std::mutex indexMutex;
+		storage.iterateReadsFromFile(file, numThreads, [&matchIndex, &indexMutex](size_t readName, const std::string& sequence)
+		{
+			matchIndex.addMatchesFromRead(readName, indexMutex, sequence);
+		});
 	}
-	auto result = matchIndex.iterateMatches([](const std::string& left, const std::string& right)
+	auto result = matchIndex.iterateMatchNames(storage.getNames(), [](const std::string& left, const std::string& right)
 	{
 		std::cout << left << "\t" << right << std::endl;
 	});

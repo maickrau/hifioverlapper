@@ -4,6 +4,7 @@
 #include <string>
 #include <cstdint>
 #include <vector>
+#include <mutex>
 #include <phmap.h>
 
 class ReadIdContainer
@@ -35,15 +36,16 @@ class MatchIndex
 {
 public:
 	MatchIndex(size_t k, size_t numWindows, size_t windowSize);
-	void addMatchesFromFile(size_t numThreads, std::string file);
+	void addMatch(uint64_t hash, uint32_t readKey);
+	void addMatchesFromRead(uint32_t readKey, std::mutex& indexMutex, const std::string& readSequence);
 	template <typename F>
 	IterationInfo iterateMatches(F callback) const
 	{
 		IterationInfo result;
-		result.numberReads = names.size();
+		result.numberReads = numReads;
 		result.numerWindowChunks = idContainer.size();
 		std::vector<std::vector<uint32_t>> hashesPerRead;
-		hashesPerRead.resize(names.size());
+		hashesPerRead.resize(numReads);
 		size_t maxPerChunk = 0;
 		const auto& numbers = idContainer.getMultiNumbers();
 		size_t uniqueChunks = idContainer.size() - numbers.size();
@@ -77,7 +79,7 @@ public:
 			totalMatches += matches.size();
 			for (auto match : matches)
 			{
-				callback(names[i], names[match]);
+				callback(i, match);
 			}
 		}
 		result.readsWithMatch = readsWithMatch;
@@ -85,11 +87,19 @@ public:
 		result.totalMatches = totalMatches;
 		return result;
 	}
+	template <typename F>
+	IterationInfo iterateMatchNames(const std::vector<std::string>& names, F callback) const
+	{
+		return iterateMatches([&names, callback](size_t left, size_t right)
+		{
+			callback(names[left], names[right]);
+		});
+	}
 private:
 	size_t k;
 	size_t numWindows;
 	size_t windowSize;
-	std::vector<std::string> names;
+	size_t numReads;
 	ReadIdContainer idContainer;
 };
 

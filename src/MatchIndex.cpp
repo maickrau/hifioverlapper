@@ -44,27 +44,27 @@ size_t ReadIdContainer::size() const
 MatchIndex::MatchIndex(size_t k, size_t numWindows, size_t windowSize) :
 	k(k),
 	numWindows(numWindows),
-	windowSize(windowSize)
+	windowSize(windowSize),
+	numReads(0)
 {
 }
 
-void MatchIndex::addMatchesFromFile(size_t numThreads, std::string file)
+void MatchIndex::addMatch(uint64_t hash, uint32_t readKey)
 {
+	idContainer.addNumber(hash, readKey);
+}
+
+void MatchIndex::addMatchesFromRead(uint32_t readKey, std::mutex& indexMutex, const std::string& readSequence)
+{
+	if (numReads < readKey) numReads = readKey+1;
 	ErrorMasking errorMasking = ErrorMasking::CollapseMicrosatellite;
-	std::vector<std::string> readFiles { file };
-	ReadpartIterator partIterator { 31, 1, errorMasking, numThreads, readFiles, false, "" };
-	std::mutex indexMutex;
-	partIterator.iterateParts([this, &indexMutex](const ReadInfo& read, const SequenceCharType& seq, const SequenceLengthType& poses, const std::string& raw)
+	std::vector<std::string> readFiles { };
+	ReadpartIterator partIterator { 31, 1, errorMasking, 1, readFiles, false, "" };
+	partIterator.iteratePartsOfRead("", readSequence, [this, &indexMutex, readKey](const ReadInfo& read, const SequenceCharType& seq, const SequenceLengthType& poses, const std::string& raw)
 	{
 		if (seq.size() < numWindows * windowSize + k) return;
-		size_t readName;
-		{
-			std::lock_guard<std::mutex> guard { indexMutex };
-			readName = names.size();
-			names.push_back(read.readName.first);
-		}
 		phmap::flat_hash_set<size_t> hashesHere;
-		iterateWindowchunks(seq, k, numWindows, windowSize, [&hashesHere, readName](const std::vector<uint64_t>& hashes)
+		iterateWindowchunks(seq, k, numWindows, windowSize, [&hashesHere](const std::vector<uint64_t>& hashes)
 		{
 			bool fw = true;
 			for (size_t i = 0; i < hashes.size()/2; i++)
@@ -98,8 +98,7 @@ void MatchIndex::addMatchesFromFile(size_t numThreads, std::string file)
 		std::lock_guard<std::mutex> guard { indexMutex };
 		for (auto hash : hashesHere)
 		{
-			idContainer.addNumber(hash, readName);
+			addMatch(hash, readKey);
 		}
 	});
-
 }
