@@ -130,6 +130,8 @@ public:
 			if (!leftFw)
 			{
 				leftpos = rawReadLengths[leftread] - leftpos;
+				rightpos = rawReadLengths[rightread] - rightpos;
+				rightFw = !rightFw;
 			}
 			if (rightFw)
 			{
