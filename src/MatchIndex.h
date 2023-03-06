@@ -159,9 +159,9 @@ public:
 			size_t rightEnd = fwMatches[0].second;
 			for (size_t i = 1; i < fwMatches.size(); i++)
 			{
-				if ((int64_t)fwMatches[i].second - (int64_t)fwMatches[i].first > (int64_t)fwMatches[i+1].second - (int64_t)fwMatches[i+1].first + (int64_t)maxChainDiagonalDifference)
+				if ((int64_t)fwMatches[i].second - (int64_t)fwMatches[i].first > (int64_t)fwMatches[i-1].second - (int64_t)fwMatches[i-1].first + (int64_t)maxChainDiagonalDifference)
 				{
-					callback(leftread, leftStart, leftEnd, true, rightread, rightStart, rightEnd, true);
+					callback(leftread, leftStart, leftEnd + numWindows * windowSize, true, rightread, rightStart, rightEnd + numWindows * windowSize, true);
 					result += 1;
 					leftStart = fwMatches[i].first;
 					leftEnd = fwMatches[i].first;
@@ -176,7 +176,7 @@ public:
 					rightEnd = std::max(rightEnd, fwMatches[i].second);
 				}
 			}
-			callback(leftread, leftStart, leftEnd, true, rightread, rightStart, rightEnd, true);
+			callback(leftread, leftStart, leftEnd + numWindows * windowSize, true, rightread, rightStart, rightEnd + numWindows * windowSize, true);
 			result += 1;
 		}
 		if (bwMatches.size() > 0)
@@ -188,9 +188,9 @@ public:
 			size_t rightEnd = bwMatches[0].second;
 			for (size_t i = 1; i < bwMatches.size(); i++)
 			{
-				if ((int64_t)bwMatches[i].second - (int64_t)bwMatches[i].first > (int64_t)bwMatches[i+1].second - (int64_t)bwMatches[i+1].first + (int64_t)maxChainDiagonalDifference)
+				if ((int64_t)bwMatches[i].second - (int64_t)bwMatches[i].first > (int64_t)bwMatches[i-1].second - (int64_t)bwMatches[i-1].first + (int64_t)maxChainDiagonalDifference)
 				{
-					callback(leftread, leftStart, leftEnd, true, rightread, rightStart, rightEnd, false);
+					callback(leftread, leftStart, leftEnd + numWindows * windowSize, true, rightread, rightStart, rightEnd + numWindows * windowSize, false);
 					result += 1;
 					leftStart = bwMatches[i].first;
 					leftEnd = bwMatches[i].first;
@@ -205,7 +205,7 @@ public:
 					rightEnd = std::max(rightEnd, bwMatches[i].second);
 				}
 			}
-			callback(leftread, leftStart, leftEnd, true, rightread, rightStart, rightEnd, false);
+			callback(leftread, leftStart, leftEnd + numWindows * windowSize, true, rightread, rightStart, rightEnd + numWindows * windowSize, false);
 			result += 1;
 		}
 		return result;
