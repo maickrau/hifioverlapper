@@ -23,6 +23,7 @@ public:
 				std::lock_guard<std::mutex> guard { nameMutex };
 				name = names.size();
 				names.push_back(info.readName.first);
+				rawReadLengths.push_back(sequence.size());
 			}
 			callback(name, sequence);
 		});
@@ -37,8 +38,10 @@ public:
 		}
 	}
 	const std::vector<std::string>& getNames() const;
+	const std::vector<size_t>& getRawReadLengths() const;
 private:
 	std::vector<std::string> names;
+	std::vector<size_t> rawReadLengths;
 	std::vector<std::string> sequences;
 };
 

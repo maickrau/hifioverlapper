@@ -41,7 +41,7 @@ void iterateWindowchunks(const SequenceCharType& seq, size_t k, size_t numWindow
 	{
 		hashesHere[i] = windowIterators[i].minimizerHash();
 	}
-	callback(hashesHere);
+	callback(hashesHere, 0);
 	for (size_t i = 0; i + numWindows * windowSize + k < seq.size(); i++)
 	{
 		bool changed = false;
@@ -56,7 +56,7 @@ void iterateWindowchunks(const SequenceCharType& seq, size_t k, size_t numWindow
 		}
 		if (changed)
 		{
-			callback(hashesHere);
+			callback(hashesHere, i+1);
 		}
 	}
 }

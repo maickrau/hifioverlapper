@@ -26,15 +26,17 @@ int main(int argc, char** argv)
 			matchIndex.addMatchesFromRead(readName, indexMutex, sequence);
 		});
 	}
-	auto result = matchIndex.iterateMatchNames(storage.getNames(), [](const std::string& left, const std::string& right)
+	auto result = matchIndex.iterateMatchNames(storage.getNames(), storage.getRawReadLengths(), [](const std::string& left, const size_t leftstart, const size_t leftend, const bool leftFw, const std::string& right, const size_t rightstart, const size_t rightend, const bool rightFw)
 	{
-		std::cout << left << "\t" << right << std::endl;
+		std::cout << left << "\t" << leftstart << "\t" << leftend << "\t" << (leftFw ? "fw" : "bw") << "\t" << right << "\t" << rightstart << "\t" << rightend << "\t" << (rightFw ? "fw" : "bw") << std::endl;
 	});
 	std::cerr << result.numberReads << " reads" << std::endl;
 	std::cerr << result.numerWindowChunks << " distinct windowchunks" << std::endl;
-	std::cerr << result.totalReadChunkMatches << " read-chunk matches (except unique)" << std::endl;
+	std::cerr << result.totalReadChunkMatches << " read-windowchunk matches (except unique)" << std::endl;
 	std::cerr << result.uniqueChunks << " windowchunks have only one read" << std::endl;
 	std::cerr << result.readsWithMatch << " reads with a match" << std::endl;
-	std::cerr << "max per chunk: " << result.maxPerChunk << std::endl;
-	std::cerr << "num matches: " << result.totalMatches << std::endl;
+	std::cerr << result.readPairMatches << " read-read matches" << std::endl;
+	std::cerr << result.readChainMatches << " chain matches" << std::endl;
+	std::cerr << result.totalMatches << " window matches" << std::endl;
+	std::cerr << result.maxPerChunk << " max windowchunk size" << std::endl;
 }

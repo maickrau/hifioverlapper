@@ -13,3 +13,8 @@ const std::vector<std::string>& ReadStorage::getNames() const
 {
 	return names;
 }
+
+const std::vector<size_t>& ReadStorage::getRawReadLengths() const
+{
+	return rawReadLengths;
+}
