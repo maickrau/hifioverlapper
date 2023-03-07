@@ -20,10 +20,10 @@ VERSION := Branch $(shell git rev-parse --abbrev-ref HEAD) commit $(shell git re
 $(shell mkdir -p bin)
 $(shell mkdir -p obj)
 
-$(BINDIR)/main: $(OBJ) $(ODIR)/main.o MBG/lib/mbg.a
+$(BINDIR)/matchchains: $(OBJ) $(ODIR)/matchchains.o MBG/lib/mbg.a
 	$(GPP) -o $@ $^ $(LINKFLAGS)
 
-$(ODIR)/main.o: $(SRCDIR)/main.cpp $(DEPS) $(OBJ)
+$(ODIR)/matchchains.o: $(SRCDIR)/matchchains.cpp $(DEPS) $(OBJ)
 	$(GPP) -c -o $@ $< $(CPPFLAGS) -DVERSION="\"$(VERSION)\""
 
 $(ODIR)/%.o: $(SRCDIR)/%.cpp $(DEPS)
@@ -32,7 +32,7 @@ $(ODIR)/%.o: $(SRCDIR)/%.cpp $(DEPS)
 MBG/lib/mbg.a:
 	$(MAKE) -C MBG lib
 
-all: $(BINDIR)/main
+all: $(BINDIR)/matchchains
 
 clean:
 	rm -f $(ODIR)/*
