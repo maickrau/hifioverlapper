@@ -12,11 +12,11 @@ class ReadStorage
 public:
 	void storeReadsFromFile(const std::string& filename, bool includeSequences);
 	template <typename F>
-	void iterateReadsFromFile(const std::string& filename, size_t numThreads, F callback)
+	void iterateReadsFromFile(const std::string& filename, size_t numThreads, bool store, F callback)
 	{
 		std::mutex nameMutex;
 		std::vector<std::string> files { filename };
-		iterateReadsMultithreaded(files, numThreads, [this, &nameMutex, callback](const ReadInfo& info, const std::string& sequence)
+		iterateReadsMultithreaded(files, numThreads, [this, store, &nameMutex, callback](const ReadInfo& info, const std::string& sequence)
 		{
 			size_t name = 0;
 			{
@@ -24,17 +24,18 @@ public:
 				name = names.size();
 				names.push_back(info.readName.first);
 				rawReadLengths.push_back(sequence.size());
+				if (store) sequences.push_back(sequence);
 			}
 			callback(name, sequence);
 		});
 	}
 	template <typename F>
-	void iterateReadsFromStorage(F callback)
+	void iterateReadsFromStorage(F callback) const
 	{
 		assert(names.size() == sequences.size());
 		for (size_t i = 0; i < names.size(); i++)
 		{
-			callback(names[i], sequences[i]);
+			callback(i, sequences[i]);
 		}
 	}
 	const std::vector<std::string>& getNames() const;

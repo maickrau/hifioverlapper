@@ -56,7 +56,7 @@ void MatchIndex::addMatch(uint64_t hash, uint64_t readKey)
 
 void MatchIndex::addMatchesFromRead(uint32_t readKey, std::mutex& indexMutex, const std::string& readSequence)
 {
-	if (numReads < readKey) numReads = readKey+1;
+	if (numReads <= readKey) numReads = readKey+1;
 	ErrorMasking errorMasking = ErrorMasking::CollapseMicrosatellite;
 	std::vector<std::string> readFiles { };
 	ReadpartIterator partIterator { 31, 1, errorMasking, 1, readFiles, false, "" };

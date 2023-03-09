@@ -6,6 +6,7 @@
 #include <vector>
 #include <mutex>
 #include <tuple>
+#include <unordered_set>
 #include <phmap.h>
 
 class ReadIdContainer
@@ -42,7 +43,7 @@ public:
 	void addMatch(uint64_t hash, uint64_t readKey);
 	void addMatchesFromRead(uint32_t readKey, std::mutex& indexMutex, const std::string& readSequence);
 	template <typename F>
-	IterationInfo iterateMatches(F callback) const
+	IterationInfo iterateMatches(bool alsoSmaller, F callback) const
 	{
 		IterationInfo result;
 		result.numberReads = numReads;
@@ -81,7 +82,7 @@ public:
 					uint32_t read = readkey >> 32;
 					uint32_t otherpos = readkey;
 					if (read == i) continue;
-					if (read < i) continue;
+					if (!alsoSmaller && read < i) continue;
 					matches.emplace_back(read, pos, otherpos);
 				}
 			}
@@ -110,6 +111,24 @@ public:
 		return result;
 	}
 	template <typename F>
+	IterationInfo iterateMatchReadPairs(F callback) const
+	{
+		size_t currentRead = 0;
+		std::unordered_set<size_t> matches;
+		auto result = iterateMatches(true, [&currentRead, &matches, callback](size_t left, size_t leftPos, bool leftFw, size_t right, size_t rightPos, bool rightFw)
+		{
+			if (left != currentRead)
+			{
+				if (matches.size() > 0) callback(currentRead, matches);
+				currentRead = left;
+				matches.clear();
+			}
+			matches.insert(right);
+		});
+		if (matches.size() > 0) callback(currentRead, matches);
+		return result;
+	}
+	template <typename F>
 	IterationInfo iterateMatchChains(const std::vector<size_t>& rawReadLengths, F callback) const
 	{
 		size_t currentLeftRead = std::numeric_limits<size_t>::max();
@@ -117,7 +136,7 @@ public:
 		std::vector<std::pair<size_t, size_t>> currentFwMatches;
 		std::vector<std::pair<size_t, size_t>> currentBwMatches;
 		size_t totalChains = 0;
-		auto result = iterateMatches([this, &totalChains, &currentLeftRead, &currentRightRead, &currentFwMatches, &currentBwMatches, &rawReadLengths, callback](size_t leftread, size_t leftpos, bool leftFw, size_t rightread, size_t rightpos, bool rightFw)
+		auto result = iterateMatches(false, [this, &totalChains, &currentLeftRead, &currentRightRead, &currentFwMatches, &currentBwMatches, &rawReadLengths, callback](size_t leftread, size_t leftpos, bool leftFw, size_t rightread, size_t rightpos, bool rightFw)
 		{
 			if (leftread != currentLeftRead || rightread != currentRightRead)
 			{
