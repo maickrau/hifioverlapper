@@ -150,8 +150,8 @@ size_t canonnum(size_t left, size_t right)
 std::unordered_set<uint64_t> forbidDifferentHaplos(const MatchIndex& matchIndex, const ReadStorage& storage, const std::unordered_set<uint64_t>& initialForbidden, const ErrorMasking errorMasking)
 {
 	std::unordered_set<uint64_t> result;
-	size_t kmerSize = 501;
-	size_t windowSize = 250;
+	size_t kmerSize = 101;
+	size_t windowSize = 50;
 	ReadpartIterator partIterator { kmerSize, windowSize, errorMasking, 1, std::vector<std::string>{}, false, "" };
 	std::unordered_map<std::string, size_t> readNameToId;
 	storage.iterateReadsFromStorage([&partIterator, &storage, &readNameToId](size_t readid, const std::string& readSequence)
