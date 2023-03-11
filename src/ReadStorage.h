@@ -38,8 +38,10 @@ public:
 			callback(i, sequences[i]);
 		}
 	}
+	std::pair<std::string, std::string> getRead(size_t i) const;
 	const std::vector<std::string>& getNames() const;
 	const std::vector<size_t>& getRawReadLengths() const;
+	size_t size() const;
 private:
 	std::vector<std::string> names;
 	std::vector<size_t> rawReadLengths;

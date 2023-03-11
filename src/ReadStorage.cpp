@@ -18,3 +18,13 @@ const std::vector<size_t>& ReadStorage::getRawReadLengths() const
 {
 	return rawReadLengths;
 }
+
+std::pair<std::string, std::string> ReadStorage::getRead(size_t i) const
+{
+	return std::make_pair(names[i], sequences[i]);
+}
+
+size_t ReadStorage::size() const
+{
+	return names.size();
+}

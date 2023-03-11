@@ -26,6 +26,12 @@ $(BINDIR)/matchchains: $(OBJ) $(ODIR)/matchchains.o MBG/lib/mbg.a
 $(ODIR)/matchchains.o: $(SRCDIR)/matchchains.cpp $(DEPS) $(OBJ)
 	$(GPP) -c -o $@ $< $(CPPFLAGS) -DVERSION="\"$(VERSION)\""
 
+$(BINDIR)/dbgcorrection: $(OBJ) $(ODIR)/dbgcorrection.o MBG/lib/mbg.a
+	$(GPP) -o $@ $^ $(LINKFLAGS)
+
+$(ODIR)/dbgcorrection.o: $(SRCDIR)/dbgcorrection.cpp $(DEPS) $(OBJ)
+	$(GPP) -c -o $@ $< $(CPPFLAGS) -DVERSION="\"$(VERSION)\""
+
 $(BINDIR)/haplofilter: $(OBJ) $(ODIR)/haplofilter.o MBG/lib/mbg.a
 	$(GPP) -o $@ $^ $(LINKFLAGS)
 
@@ -38,7 +44,7 @@ $(ODIR)/%.o: $(SRCDIR)/%.cpp $(DEPS)
 MBG/lib/mbg.a:
 	$(MAKE) -C MBG lib
 
-all: $(BINDIR)/matchchains $(BINDIR)/haplofilter
+all: $(BINDIR)/matchchains $(BINDIR)/haplofilter  $(BINDIR)/dbgcorrection
 
 clean:
 	rm -f $(ODIR)/*
