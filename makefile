@@ -32,6 +32,12 @@ $(BINDIR)/dbgcorrection: $(OBJ) $(ODIR)/dbgcorrection.o MBG/lib/mbg.a
 $(ODIR)/dbgcorrection.o: $(SRCDIR)/dbgcorrection.cpp $(DEPS) $(OBJ)
 	$(GPP) -c -o $@ $< $(CPPFLAGS) -DVERSION="\"$(VERSION)\""
 
+$(BINDIR)/kmercorrection: $(OBJ) $(ODIR)/kmercorrection.o MBG/lib/mbg.a
+	$(GPP) -o $@ $^ $(LINKFLAGS)
+
+$(ODIR)/kmercorrection.o: $(SRCDIR)/kmercorrection.cpp $(DEPS) $(OBJ)
+	$(GPP) -c -o $@ $< $(CPPFLAGS) -DVERSION="\"$(VERSION)\""
+
 $(BINDIR)/haplofilter: $(OBJ) $(ODIR)/haplofilter.o MBG/lib/mbg.a
 	$(GPP) -o $@ $^ $(LINKFLAGS)
 
@@ -44,7 +50,7 @@ $(ODIR)/%.o: $(SRCDIR)/%.cpp $(DEPS)
 MBG/lib/mbg.a:
 	$(MAKE) -C MBG lib
 
-all: $(BINDIR)/matchchains $(BINDIR)/haplofilter  $(BINDIR)/dbgcorrection
+all: $(BINDIR)/matchchains $(BINDIR)/haplofilter $(BINDIR)/dbgcorrection $(BINDIR)/kmercorrection
 
 clean:
 	rm -f $(ODIR)/*
