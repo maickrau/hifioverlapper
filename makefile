@@ -26,6 +26,12 @@ $(BINDIR)/matchchains: $(OBJ) $(ODIR)/matchchains.o MBG/lib/mbg.a
 $(ODIR)/matchchains.o: $(SRCDIR)/matchchains.cpp $(DEPS) $(OBJ)
 	$(GPP) -c -o $@ $< $(CPPFLAGS) -DVERSION="\"$(VERSION)\""
 
+$(BINDIR)/localcorrection: $(OBJ) $(ODIR)/localcorrection.o MBG/lib/mbg.a
+	$(GPP) -o $@ $^ $(LINKFLAGS)
+
+$(ODIR)/localcorrection.o: $(SRCDIR)/localcorrection.cpp $(DEPS) $(OBJ)
+	$(GPP) -c -o $@ $< $(CPPFLAGS) -DVERSION="\"$(VERSION)\""
+
 $(BINDIR)/dbgcorrection: $(OBJ) $(ODIR)/dbgcorrection.o MBG/lib/mbg.a
 	$(GPP) -o $@ $^ $(LINKFLAGS)
 
@@ -50,7 +56,7 @@ $(ODIR)/%.o: $(SRCDIR)/%.cpp $(DEPS)
 MBG/lib/mbg.a:
 	$(MAKE) -C MBG lib
 
-all: $(BINDIR)/matchchains $(BINDIR)/haplofilter $(BINDIR)/dbgcorrection $(BINDIR)/kmercorrection
+all: $(BINDIR)/matchchains $(BINDIR)/haplofilter $(BINDIR)/dbgcorrection $(BINDIR)/kmercorrection $(BINDIR)/localcorrection
 
 clean:
 	rm -f $(ODIR)/*
