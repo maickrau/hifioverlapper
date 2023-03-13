@@ -41,11 +41,11 @@ reads(kmerSize)
 
 }
 
-void loadKmerSequences(const ReadpartIterator& partIterator, const size_t kmerSize, const HashList& reads, const RankBitvector& hasSequence, ConcatenatedStringStorage& kmerSequences)
+void loadKmerSequences(const ReadpartIterator& partIterator, const size_t kmerSize, const HashList& reads, const RankBitvector& hasSequence, ConcatenatedStringStorage& kmerSequences, std::vector<bool>& hasFwCoverage, std::vector<bool>& hasBwCoverage)
 {
 	std::vector<bool> loaded;
 	loaded.resize(kmerSequences.size(), false);
-	partIterator.iterateHashes([&hasSequence, &kmerSequences, &reads, &loaded, kmerSize](const ReadInfo& read, const SequenceCharType& seq, const SequenceLengthType& poses, const std::string& rawSeq, const std::vector<size_t>& positions, const std::vector<HashType>& hashes)
+	partIterator.iterateHashes([&hasSequence, &kmerSequences, &reads, &loaded, &hasFwCoverage, &hasBwCoverage, kmerSize](const ReadInfo& read, const SequenceCharType& seq, const SequenceLengthType& poses, const std::string& rawSeq, const std::vector<size_t>& positions, const std::vector<HashType>& hashes)
 	{
 		for (size_t i = 0; i < positions.size(); i++)
 		{
@@ -53,6 +53,14 @@ void loadKmerSequences(const ReadpartIterator& partIterator, const size_t kmerSi
 			std::pair<size_t, bool> current = reads.getNodeOrNull(fwHash);
 			if (!hasSequence.get(current.first)) continue;
 			size_t sequenceIndex = hasSequence.getRank(current.first);
+			if (current.second)
+			{
+				hasFwCoverage[sequenceIndex] = true;
+			}
+			else
+			{
+				hasBwCoverage[sequenceIndex] = true;
+			}
 			if (loaded[sequenceIndex]) continue;
 			std::string sequence = rawSeq.substr(positions[i], kmerSize);
 			assert(sequence.size() == kmerSize);
@@ -63,7 +71,7 @@ void loadKmerSequences(const ReadpartIterator& partIterator, const size_t kmerSi
 	});
 }
 
-std::vector<std::pair<size_t, bool>> getUniqueAltPath(const HashList& reads, const SparseEdgeContainer& edges, const std::unordered_set<size_t>& pathHashes, const std::pair<size_t, bool> start, const std::pair<size_t, bool> end)
+std::vector<std::pair<size_t, bool>> getUniqueAltPath(const HashList& reads, const SparseEdgeContainer& edges, const std::unordered_set<size_t>& pathHashes, const RankBitvector& hasSequence, const std::vector<bool>& hasFwCoverage, const std::vector<bool>& hasBwCoverage, const std::pair<size_t, bool> start, const std::pair<size_t, bool> end)
 {
 	if (end == start) return std::vector<std::pair<size_t, bool>>{};
 	std::set<std::pair<size_t, bool>> bwVisited;
@@ -80,6 +88,8 @@ std::vector<std::pair<size_t, bool>> getUniqueAltPath(const HashList& reads, con
 		{
 			if (edge == start) return std::vector<std::pair<size_t, bool>>{};
 			if (pathHashes.count(edge.first) == 1) continue;
+			size_t rank = hasSequence.getRank(edge.first);
+			if (!hasFwCoverage[rank] || !hasBwCoverage[rank]) continue;
 			checkStack.push_back(edge);
 		}
 	}
@@ -165,8 +175,10 @@ void KmerCorrector::buildGraph(const ReadpartIterator& partIterator, size_t numT
 	std::cerr << totalWithSequence << " solid k-mers" << std::endl;
 	hasSequence.buildRanks();
 	kmerSequences.resize(totalWithSequence, kmerSize);
+	hasFwCoverage.resize(totalWithSequence, false);
+	hasBwCoverage.resize(totalWithSequence, false);
 	std::cerr << "loading k-mer sequences" << std::endl;
-	loadKmerSequences(partIterator, kmerSize, reads, hasSequence, kmerSequences);
+	loadKmerSequences(partIterator, kmerSize, reads, hasSequence, kmerSequences, hasFwCoverage, hasBwCoverage);
 	edges = getCoveredEdges(reads, minAmbiguousCoverage);
 }
 
@@ -199,6 +211,8 @@ std::pair<std::string, bool> KmerCorrector::getCorrectedSequence(const std::stri
 	for (size_t i = 0; i < positions.size(); i++)
 	{
 		if (reads.coverage.get(rawPath[i].first) < minAmbiguousCoverage) continue;
+		size_t rank = hasSequence.getRank(rawPath[i].first);
+		if (!hasFwCoverage[rank] || !hasBwCoverage[rank]) continue;
 		if (lastSolid == std::numeric_limits<size_t>::max())
 		{
 			assert(fixlist.size() == 0);
@@ -210,7 +224,7 @@ std::pair<std::string, bool> KmerCorrector::getCorrectedSequence(const std::stri
 			lastSolid = i;
 			continue;
 		}
-		std::vector<std::pair<size_t, bool>> uniqueAltPath = getUniqueAltPath(reads, edges, pathHashes, rawPath[lastSolid], rawPath[i]);
+		std::vector<std::pair<size_t, bool>> uniqueAltPath = getUniqueAltPath(reads, edges, pathHashes, hasSequence, hasFwCoverage, hasBwCoverage, rawPath[lastSolid], rawPath[i]);
 		if (uniqueAltPath.size() == 0)
 		{
 			lastSolid = i;

@@ -34,6 +34,8 @@ private:
 	ConcatenatedStringStorage kmerSequences;
 	RankBitvector hasSequence;
 	HashList reads;
+	std::vector<bool> hasFwCoverage;
+	std::vector<bool> hasBwCoverage;
 };
 
 #endif
