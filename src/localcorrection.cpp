@@ -9,9 +9,8 @@
 #include "MatchIndex.h"
 
 template <typename F>
-void iterateCorrectedSequences(const MatchIndex& matchIndex, const ReadStorage& storage, F callback)
+void iterateCorrectedSequences(size_t kmerSize, const MatchIndex& matchIndex, const ReadStorage& storage, F callback)
 {
-	size_t kmerSize = 101;
 	size_t windowSize = 50;
 	ReadpartIterator partIterator { kmerSize, windowSize, ErrorMasking::No, 1, std::vector<std::string>{}, false, "" };
 	std::unordered_map<std::string, size_t> readNameToId;
@@ -37,7 +36,7 @@ void iterateCorrectedSequences(const MatchIndex& matchIndex, const ReadStorage& 
 			return;
 		}
 		partIterator.setMemoryReadIterables(useThese);
-		KmerCorrector corrector { 101, 5, 2 };
+		KmerCorrector corrector { kmerSize, 5, 2 };
 		corrector.buildGraph(partIterator, 1);
 		partIterator.setMemoryReadIterables(std::vector<size_t> { read });
 		partIterator.iterateHashes([&corrector, callback, read](const ReadInfo& read, const SequenceCharType& seq, const SequenceLengthType& poses, const std::string& rawSeq, const std::vector<size_t>& positions, const std::vector<HashType>& hashes)
@@ -52,15 +51,16 @@ void iterateCorrectedSequences(const MatchIndex& matchIndex, const ReadStorage& 
 int main(int argc, char** argv)
 {
 	size_t numThreads = std::stoi(argv[1]);
-	size_t k = std::stoull(argv[2]);
+	size_t searchk = std::stoull(argv[2]);
 	size_t numWindows = std::stoull(argv[3]);
 	size_t windowSize = std::stoull(argv[4]);
+	size_t correctk = std::stoull(argv[5]);
 	std::vector<std::string> readFiles;
-	for (size_t i = 5; i < argc; i++)
+	for (size_t i = 6; i < argc; i++)
 	{
 		readFiles.emplace_back(argv[i]);
 	}
-	MatchIndex matchIndex { k, numWindows, windowSize };
+	MatchIndex matchIndex { searchk, numWindows, windowSize };
 	ReadStorage storage;
 	std::cerr << "loading reads" << std::endl;
 	for (auto file : readFiles)
@@ -75,7 +75,7 @@ int main(int argc, char** argv)
 	size_t numCorrected = 0;
 	size_t numNotCorrected = 0;
 	std::cerr << "correcting" << std::endl;
-	iterateCorrectedSequences(matchIndex, storage, [&matchIndex, &storage, &writeMutex, &numCorrected, &numNotCorrected](size_t readId, const std::string& readSeq, bool corrected)
+	iterateCorrectedSequences(correctk, matchIndex, storage, [&matchIndex, &storage, &writeMutex, &numCorrected, &numNotCorrected](size_t readId, const std::string& readSeq, bool corrected)
 	{
 		std::lock_guard<std::mutex> lock { writeMutex };
 		std::cout << ">" << storage.getNames()[readId] << std::endl;
