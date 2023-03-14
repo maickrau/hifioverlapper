@@ -27,6 +27,15 @@ public:
 	void buildGraph(const ReadpartIterator& iterator, size_t numThreads);
 	std::pair<std::string, bool> getCorrectedSequence(const std::string& rawSeq, const std::vector<size_t>& positions, const std::vector<HashType>& hashes) const;
 private:
+	std::pair<size_t, bool> findBubble(std::pair<size_t, bool> start) const;
+	void forbidPathNodes(const std::vector<std::pair<size_t, bool>>& path);
+	void allowPathNodes(const std::vector<std::pair<size_t, bool>>& path);
+	size_t getPathCoverage(const std::vector<std::pair<size_t, bool>>& path) const;
+	std::pair<std::string, std::vector<size_t>> getHomopolymerCompressedPathSequence(const std::vector<std::pair<size_t, bool>>& path) const;
+	void forbidHomopolymerAlleles(const std::pair<size_t, bool> start, const std::pair<size_t, bool> end);
+	void enumeratePathsRecursion(std::vector<std::vector<std::pair<size_t, bool>>>& result, std::vector<std::pair<size_t, bool>>& currentPath, const std::pair<size_t, bool> end, const size_t maxCount) const;
+	std::vector<std::vector<std::pair<size_t, bool>>> enumeratePaths(const std::pair<size_t, bool> start, const std::pair<size_t, bool> end, const size_t maxCount) const;
+	void forbidHomopolymerErrors();
 	size_t kmerSize;
 	size_t minSolidCoverage;
 	size_t minAmbiguousCoverage;
@@ -36,6 +45,7 @@ private:
 	HashList reads;
 	std::vector<bool> hasFwCoverage;
 	std::vector<bool> hasBwCoverage;
+	std::vector<bool> removedHomopolymerError;
 };
 
 #endif

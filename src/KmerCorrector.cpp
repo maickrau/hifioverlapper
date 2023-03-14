@@ -161,6 +161,285 @@ std::string getFixedSequence(const std::string& rawSeq, const HashList& reads, c
 	return result;
 }
 
+std::pair<size_t, bool> KmerCorrector::findBubble(std::pair<size_t, bool> start) const
+{
+	std::vector<std::pair<size_t, bool>> S;
+	S.push_back(start);
+	std::unordered_set<std::pair<size_t, bool>> visited;
+	std::unordered_set<std::pair<size_t, bool>> seen;
+	seen.insert(start);
+	std::pair<size_t, bool> bubbleEnd { std::numeric_limits<size_t>::max(), false };
+	while (S.size() > 0)
+	{
+		const std::pair<size_t, bool> v = S.back();
+		S.pop_back();
+		assert(seen.count(v) == 1);
+		seen.erase(v);
+		if (visited.count(reverse(v)) == 1) return bubbleEnd;
+		assert(visited.count(v) == 0);
+		visited.insert(v);
+		if (edges[v].size() == 0) return bubbleEnd;
+		bool hasEdge = false;
+		for (auto u : edges[v])
+		{
+			if (!hasSequence.get(u.first)) continue;
+			size_t rank = hasSequence.getRank(u.first);
+			if (!hasFwCoverage[rank] || !hasBwCoverage[rank]) continue;
+			if (u == v) return bubbleEnd;
+			if (u == start) return bubbleEnd;
+			assert(visited.count(u) == 0);
+			seen.insert(u);
+			hasEdge = true;
+			bool hasUnvisitedInneighbor = false;
+			for (auto w : edges[reverse(u)])
+			{
+				if (w == u) return bubbleEnd;
+				if (!hasSequence.get(w.first)) continue;
+				size_t rank = hasSequence.getRank(w.first);
+				if (!hasFwCoverage[rank] || !hasBwCoverage[rank]) continue;
+				if (visited.count(reverse(w)) == 0)
+				{
+					hasUnvisitedInneighbor = true;
+				}
+			}
+			if (!hasUnvisitedInneighbor) S.push_back(u);
+		}
+		if (!hasEdge) return bubbleEnd;
+		if (S.size() == 1 && seen.size() == 1 && seen.count(S[0]) == 1)
+		{
+			bubbleEnd = S[0];
+			break;
+		}
+	}
+	return bubbleEnd;
+}
+
+void KmerCorrector::forbidPathNodes(const std::vector<std::pair<size_t, bool>>& path)
+{
+	for (auto node : path)
+	{
+		assert(hasSequence.get(node.first));
+		size_t rank = hasSequence.getRank(node.first);
+		removedHomopolymerError[rank] = true;
+	}
+}
+
+void KmerCorrector::allowPathNodes(const std::vector<std::pair<size_t, bool>>& path)
+{
+	for (auto node : path)
+	{
+		assert(hasSequence.get(node.first));
+		size_t rank = hasSequence.getRank(node.first);
+		removedHomopolymerError[rank] = false;
+	}
+}
+
+bool homopolymerAdjacent(const std::vector<size_t>& left, const std::vector<size_t>& right)
+{
+	assert(left.size() == right.size());
+	bool foundDifference = false;
+	for (size_t i = 0; i < left.size(); i++)
+	{
+		if (left[i] == right[i]) continue;
+		if (left[i] == right[i]+1)
+		{
+			if (foundDifference) return false;
+			foundDifference = true;
+		}
+		if (left[i]+1 == right[i])
+		{
+			if (foundDifference) return false;
+			foundDifference = true;
+		}
+		return false;
+	}
+	return true;
+}
+
+size_t KmerCorrector::getPathCoverage(const std::vector<std::pair<size_t, bool>>& path) const
+{
+	assert(path.size() >= 1);
+	size_t result = reads.coverage.get(path[0].first);
+	for (size_t i = 1; i < path.size(); i++)
+	{
+		result = std::min(result, reads.coverage.get(path[i].first));
+	}
+	return result;
+}
+
+std::pair<std::string, std::vector<size_t>> KmerCorrector::getHomopolymerCompressedPathSequence(const std::vector<std::pair<size_t, bool>>& path) const
+{
+	std::string resultExpanded = getPathSequence(reads, kmerSize, hasSequence, kmerSequences, path);
+	std::string resultCompressed;
+	std::vector<size_t> resultLengths;
+	assert(resultExpanded.size() >= 1);
+	resultCompressed.push_back(resultExpanded[0]);
+	resultLengths.push_back(1);
+	for (size_t i = 1; i < resultExpanded.size(); i++)
+	{
+		if (resultExpanded[i] == resultExpanded[i-1])
+		{
+			resultLengths.back() += 1;
+		}
+		else
+		{
+			resultCompressed.push_back(resultExpanded[i]);
+			resultLengths.push_back(1);
+		}
+	}
+	assert(resultCompressed.size() == resultLengths.size());
+	return std::make_pair(resultCompressed, resultLengths);
+}
+
+void KmerCorrector::enumeratePathsRecursion(std::vector<std::vector<std::pair<size_t, bool>>>& result, std::vector<std::pair<size_t, bool>>& currentPath, const std::pair<size_t, bool> end, const size_t maxCount) const
+{
+	assert(currentPath.size() < edges.size()+5);
+	assert(currentPath.size() >= 1);
+	assert(currentPath.back().first < edges.size());
+	for (auto node : edges[currentPath.back()])
+	{
+		if (!hasSequence.get(node.first)) continue;
+		size_t rank = hasSequence.getRank(node.first);
+		if (!hasFwCoverage[rank] || !hasBwCoverage[rank]) continue;
+		currentPath.push_back(node);
+		if (node == end)
+		{
+			result.push_back(currentPath);
+			currentPath.pop_back();
+			if (result.size() >= maxCount) return;
+		}
+		else
+		{
+			enumeratePathsRecursion(result, currentPath, end, maxCount);
+			currentPath.pop_back();
+			if (result.size() >= maxCount) return;
+		}
+	}
+}
+
+std::vector<std::vector<std::pair<size_t, bool>>> KmerCorrector::enumeratePaths(const std::pair<size_t, bool> start, const std::pair<size_t, bool> end, const size_t maxCount) const
+{
+	std::vector<std::vector<std::pair<size_t, bool>>> result;
+	std::vector<std::pair<size_t, bool>> currentPath;
+	currentPath.push_back(start);
+	enumeratePathsRecursion(result, currentPath, end, maxCount);
+	if (result.size() >= maxCount)
+	{
+		result.clear();
+	}
+	return result;
+}
+
+void KmerCorrector::forbidHomopolymerAlleles(const std::pair<size_t, bool> start, const std::pair<size_t, bool> end)
+{
+	assert(start.first < edges.size());
+	assert(end.first < edges.size());
+	assert(end != start);
+	std::vector<std::vector<std::pair<size_t, bool>>> paths = enumeratePaths(start, end, 20);
+	if (paths.size() < 2) return;
+	std::string hpcSequence;
+	std::vector<std::vector<size_t>> pathLengths;
+	for (size_t i = 0; i < paths.size(); i++)
+	{
+		auto seqHere = getHomopolymerCompressedPathSequence(paths[i]);
+		if (i == 0)
+		{
+			hpcSequence = seqHere.first;
+		}
+		else
+		{
+			if (seqHere.first != hpcSequence) return;
+		}
+		pathLengths.emplace_back(seqHere.second);
+	}
+	std::vector<size_t> parent;
+	parent.resize(paths.size());
+	std::vector<size_t> pathCoverages;
+	pathCoverages.resize(paths.size());
+	for (size_t i = 0; i < paths.size(); i++)
+	{
+		parent[i] = i;
+		pathCoverages[i] = getPathCoverage(paths[i]);
+	}
+	for (size_t i = 0; i < paths.size(); i++)
+	{
+		for (size_t j = i+1; j < paths.size(); j++)
+		{
+			if (homopolymerAdjacent(pathLengths[i], pathLengths[j]))
+			{
+				while (parent[i] != parent[parent[i]]) parent[i] = parent[parent[i]];
+				while (parent[j] != parent[parent[j]]) parent[j] = parent[parent[j]];
+				size_t leftParent = parent[i];
+				size_t rightParent = parent[j];
+				if (pathCoverages[leftParent] > pathCoverages[rightParent])
+				{
+					parent[rightParent] = leftParent;
+				}
+				else
+				{
+					parent[leftParent] = rightParent;
+				}
+			}
+		}
+	}
+	std::vector<std::vector<size_t>> clusters;
+	clusters.resize(paths.size());
+	for (size_t i = 0; i < paths.size(); i++)
+	{
+		while (parent[i] != parent[parent[i]]) parent[i] = parent[parent[i]];
+		assert(parent[i] == i || pathCoverages[parent[i]] >= pathCoverages[i]);
+		clusters[parent[i]].push_back(i);
+	}
+	std::vector<size_t> keepMaxes;
+	for (size_t i = 0; i < clusters.size(); i++)
+	{
+		size_t clusterMax = 0;
+		for (auto path : clusters[i])
+		{
+			if (pathCoverages[path] > pathCoverages[clusterMax]) clusterMax = path;
+		}
+		bool coverageValid = true;
+		for (auto path : clusters[i])
+		{
+			if (path != clusterMax && pathCoverages[path]*2 > pathCoverages[clusterMax]) coverageValid = false;
+		}
+		if (!coverageValid)
+		{
+			for (auto path : clusters[i]) keepMaxes.push_back(path);
+			continue;
+		}
+		for (auto path : clusters[i])
+		{
+			forbidPathNodes(paths[path]);
+		}
+		keepMaxes.push_back(clusterMax);
+	}
+	for (auto path : keepMaxes)
+	{
+		allowPathNodes(paths[path]);
+	}
+}
+
+void KmerCorrector::forbidHomopolymerErrors()
+{
+	for (size_t i = 0; i < hasSequence.size(); i++)
+	{
+		if (!hasSequence.get(i)) continue;
+		size_t rank = hasSequence.getRank(i);
+		if (!hasFwCoverage[rank] || !hasBwCoverage[rank]) continue;
+		auto bubbleEndFw = findBubble(std::make_pair(i, true));
+		if (bubbleEndFw.first != std::numeric_limits<size_t>::max())
+		{
+			forbidHomopolymerAlleles(std::make_pair(i, true), bubbleEndFw);
+		}
+		auto bubbleEndBw = findBubble(std::make_pair(i, false));
+		if (bubbleEndBw.first != std::numeric_limits<size_t>::max())
+		{
+			forbidHomopolymerAlleles(std::make_pair(i, false), bubbleEndBw);
+		}
+	}
+}
+
 void KmerCorrector::buildGraph(const ReadpartIterator& partIterator, size_t numThreads)
 {
 	loadReadsAsHashesMultithread(reads, kmerSize, partIterator, numThreads, std::cerr);
@@ -168,7 +447,7 @@ void KmerCorrector::buildGraph(const ReadpartIterator& partIterator, size_t numT
 	size_t totalWithSequence = 0;
 	for (size_t i = 0; i < reads.size(); i++)
 	{
-		if (reads.coverage.get(i) < minSolidCoverage) continue;
+		if (reads.coverage.get(i) < minAmbiguousCoverage) continue;
 		totalWithSequence += 1;
 		hasSequence.set(i, true);
 	}
@@ -180,6 +459,8 @@ void KmerCorrector::buildGraph(const ReadpartIterator& partIterator, size_t numT
 	std::cerr << "loading k-mer sequences" << std::endl;
 	loadKmerSequences(partIterator, kmerSize, reads, hasSequence, kmerSequences, hasFwCoverage, hasBwCoverage);
 	edges = getCoveredEdges(reads, minAmbiguousCoverage);
+	removedHomopolymerError.resize(totalWithSequence, false);
+	forbidHomopolymerErrors();
 }
 
 template <typename T>
@@ -212,6 +493,7 @@ std::pair<std::string, bool> KmerCorrector::getCorrectedSequence(const std::stri
 	{
 		if (reads.coverage.get(rawPath[i].first) < minAmbiguousCoverage) continue;
 		size_t rank = hasSequence.getRank(rawPath[i].first);
+		if (removedHomopolymerError[rank]) continue;
 		if (!hasFwCoverage[rank] || !hasBwCoverage[rank]) continue;
 		if (lastSolid == std::numeric_limits<size_t>::max())
 		{
