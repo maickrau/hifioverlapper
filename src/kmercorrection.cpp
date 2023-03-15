@@ -26,7 +26,7 @@ int main(int argc, char** argv)
 	{
 		readFiles.emplace_back(argv[i]);
 	}
-	size_t windowSize = kmerSize-30;
+	size_t windowSize = kmerSize/2;
 	size_t solidCoverage = 5;
 	size_t ambiguousCoverage = 2;
 	ReadpartIterator partIterator { kmerSize, windowSize, ErrorMasking::No, numThreads, readFiles, false, "" };
