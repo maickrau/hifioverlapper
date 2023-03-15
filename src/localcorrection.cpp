@@ -11,7 +11,8 @@
 template <typename F>
 void iterateCorrectedSequences(size_t kmerSize, const MatchIndex& matchIndex, const ReadStorage& storage, F callback)
 {
-	size_t windowSize = 50;
+	size_t windowSize = kmerSize/2;
+	if (windowSize > 50) windowSize = 50;
 	ReadpartIterator partIterator { kmerSize, windowSize, ErrorMasking::No, 1, std::vector<std::string>{}, false, "" };
 	std::unordered_map<std::string, size_t> readNameToId;
 	storage.iterateReadsFromStorage([&partIterator, &storage, &readNameToId](size_t readid, const std::string& readSequence)
