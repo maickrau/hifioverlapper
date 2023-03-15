@@ -28,7 +28,7 @@ int main(int argc, char** argv)
 	}
 	size_t windowSize = kmerSize/2;
 	size_t solidCoverage = 5;
-	size_t ambiguousCoverage = 2;
+	size_t ambiguousCoverage = 3;
 	ReadpartIterator partIterator { kmerSize, windowSize, ErrorMasking::No, numThreads, readFiles, false, "" };
 	KmerCorrector corrector { kmerSize, solidCoverage, ambiguousCoverage };
 	corrector.buildGraph(partIterator, numThreads);

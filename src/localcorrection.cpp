@@ -37,7 +37,7 @@ void iterateCorrectedSequences(size_t kmerSize, const MatchIndex& matchIndex, co
 			return;
 		}
 		partIterator.setMemoryReadIterables(useThese);
-		KmerCorrector corrector { kmerSize, 5, 2 };
+		KmerCorrector corrector { kmerSize, 5, 3 };
 		corrector.buildGraph(partIterator, 1);
 		partIterator.setMemoryReadIterables(std::vector<size_t> { read });
 		partIterator.iterateHashes([&corrector, callback, read](const ReadInfo& read, const SequenceCharType& seq, const SequenceLengthType& poses, const std::string& rawSeq, const std::vector<size_t>& positions, const std::vector<HashType>& hashes)

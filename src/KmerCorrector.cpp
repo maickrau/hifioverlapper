@@ -178,7 +178,7 @@ std::pair<size_t, bool> KmerCorrector::findBubble(std::pair<size_t, bool> start)
 		if (visited.count(reverse(v)) == 1) return bubbleEnd;
 		assert(visited.count(v) == 0);
 		visited.insert(v);
-		if (edges[v].size() == 0) return bubbleEnd;
+		// if (edges[v].size() == 0) return bubbleEnd;
 		bool hasEdge = false;
 		for (auto u : edges[v])
 		{
@@ -204,7 +204,7 @@ std::pair<size_t, bool> KmerCorrector::findBubble(std::pair<size_t, bool> start)
 			}
 			if (!hasUnvisitedInneighbor) S.push_back(u);
 		}
-		if (!hasEdge) return bubbleEnd;
+		// if (!hasEdge) return bubbleEnd;
 		if (S.size() == 1 && seen.size() == 1 && seen.count(S[0]) == 1)
 		{
 			bubbleEnd = S[0];
@@ -293,6 +293,15 @@ std::pair<std::string, std::vector<size_t>> KmerCorrector::getHomopolymerCompres
 
 void KmerCorrector::enumeratePathsRecursion(std::vector<std::vector<std::pair<size_t, bool>>>& result, std::vector<std::pair<size_t, bool>>& currentPath, const std::pair<size_t, bool> end, const size_t maxCount) const
 {
+	if (currentPath.size() > 2000)
+	{
+		// fill to make sure nothing is returned
+		for (size_t i = 0; i < maxCount; i++)
+		{
+			result.emplace_back();
+		}
+		return;
+	}
 	assert(currentPath.size() < edges.size()+5);
 	assert(currentPath.size() >= 1);
 	assert(currentPath.back().first < edges.size());
