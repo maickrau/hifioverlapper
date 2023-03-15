@@ -491,7 +491,7 @@ std::pair<std::string, bool> KmerCorrector::getCorrectedSequence(const std::stri
 	size_t lastSolid = std::numeric_limits<size_t>::max();
 	for (size_t i = 0; i < positions.size(); i++)
 	{
-		if (reads.coverage.get(rawPath[i].first) < minAmbiguousCoverage) continue;
+		if (reads.coverage.get(rawPath[i].first) < minSolidCoverage) continue;
 		size_t rank = hasSequence.getRank(rawPath[i].first);
 		if (removedHomopolymerError[rank]) continue;
 		if (!hasFwCoverage[rank] || !hasBwCoverage[rank]) continue;
