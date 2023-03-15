@@ -178,7 +178,7 @@ std::pair<size_t, bool> KmerCorrector::findBubble(std::pair<size_t, bool> start)
 		if (visited.count(reverse(v)) == 1) return bubbleEnd;
 		assert(visited.count(v) == 0);
 		visited.insert(v);
-		// if (edges[v].size() == 0) return bubbleEnd;
+		if (edges[v].size() == 0) return bubbleEnd;
 		bool hasEdge = false;
 		for (auto u : edges[v])
 		{
@@ -204,7 +204,7 @@ std::pair<size_t, bool> KmerCorrector::findBubble(std::pair<size_t, bool> start)
 			}
 			if (!hasUnvisitedInneighbor) S.push_back(u);
 		}
-		// if (!hasEdge) return bubbleEnd;
+		if (!hasEdge) return bubbleEnd;
 		if (S.size() == 1 && seen.size() == 1 && seen.count(S[0]) == 1)
 		{
 			bubbleEnd = S[0];
