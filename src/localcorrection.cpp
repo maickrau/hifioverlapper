@@ -23,8 +23,11 @@ void iterateCorrectedSequences(size_t kmerSize, const MatchIndex& matchIndex, co
 		nameAndSequence.second = readSequence;
 		partIterator.addMemoryRead(nameAndSequence);
 	});
-	matchIndex.iterateMatchReadPairs([&partIterator, &storage, kmerSize, callback](size_t read, const std::unordered_set<size_t>& matches)
+	std::vector<bool> processed;
+	processed.resize(storage.size(), false);
+	matchIndex.iterateMatchReadPairs([&partIterator, &storage, &processed, kmerSize, callback](size_t read, const std::unordered_set<size_t>& matches)
 	{
+		processed[read] = true;
 		std::vector<size_t> useThese;
 		useThese.push_back(read);
 		for (auto match : matches)
@@ -46,6 +49,11 @@ void iterateCorrectedSequences(size_t kmerSize, const MatchIndex& matchIndex, co
 			callback(read, corrected.first, corrected.second);
 		});
 	});
+	for (size_t i = 0; i < processed.size(); i++)
+	{
+		if (processed[i]) continue;
+		callback(i, storage.getRead(i).second, false);
+	}
 }
 
 
