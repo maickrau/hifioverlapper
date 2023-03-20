@@ -7,10 +7,10 @@ SRCDIR=src
 
 LIBS=`pkg-config --libs zlib`
 
-_DEPS = MatchIndex.h MinimizerIterator.h ReadStorage.h KmerCorrector.h
+_DEPS = MatchIndex.h MinimizerIterator.h ReadStorage.h KmerCorrector.h TwobitString.h
 DEPS = $(patsubst %, $(SRCDIR)/%, $(_DEPS))
 
-_OBJ = MatchIndex.o MinimizerIterator.o ReadStorage.o KmerCorrector.o
+_OBJ = MatchIndex.o MinimizerIterator.o ReadStorage.o KmerCorrector.o TwobitString.o
 OBJ = $(patsubst %, $(ODIR)/%, $(_OBJ))
 
 LINKFLAGS = $(CPPFLAGS) -Wl,-Bstatic $(LIBS) -Wl,-Bdynamic -Wl,--as-needed -lpthread -pthread -static-libstdc++

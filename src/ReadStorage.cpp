@@ -7,7 +7,7 @@ void ReadStorage::storeReadsFromFile(const std::string& filename, bool includeSe
 	FastQ::streamFastqFromFile(filename, false, [this](FastQ& read)
 	{
 		names.push_back(read.seq_id);
-		sequences.push_back(read.sequence);
+		sequences.emplace_back(read.sequence);
 	});
 }
 
@@ -23,7 +23,7 @@ const std::vector<size_t>& ReadStorage::getRawReadLengths() const
 
 std::pair<std::string, std::string> ReadStorage::getRead(size_t i) const
 {
-	return std::make_pair(names[i], sequences[i]);
+	return std::make_pair(names[i], sequences[i].toString());
 }
 
 size_t ReadStorage::size() const
@@ -45,7 +45,7 @@ void ReadStorage::buildHashes(const ReadpartIterator& partIterator)
 {
 	for (size_t i = 0; i < sequences.size(); i++)
 	{
-		partIterator.iterateHashesOfRead(names[i], sequences[i], [this](const ReadInfo& read, const SequenceCharType& seq, const SequenceLengthType& poses, const std::string& rawSeq, const std::vector<size_t>& positions, const std::vector<HashType>& hashes)
+		partIterator.iterateHashesOfRead(names[i], sequences[i].toString(), [this](const ReadInfo& read, const SequenceCharType& seq, const SequenceLengthType& poses, const std::string& rawSeq, const std::vector<size_t>& positions, const std::vector<HashType>& hashes)
 		{
 			this->positions.push_back(positions);
 			this->hashes.push_back(hashes);
@@ -60,7 +60,7 @@ void ReadStorage::setMemoryIterables(const std::vector<size_t>& iterables)
 	ReadStorageMemoryIterables = iterables;
 }
 
-const std::string& ReadStorage::getSequence(size_t i) const
+std::string ReadStorage::getSequence(size_t i) const
 {
-	return sequences[i];
+	return sequences[i].toString();
 }

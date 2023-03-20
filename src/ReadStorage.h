@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include <mutex>
+#include "TwobitString.h"
 #include "ReadHelper.h"
 #include "fastqloader.h"
 
@@ -26,7 +27,7 @@ public:
 				name = names.size();
 				names.push_back(info.readName.first);
 				rawReadLengths.push_back(sequence.size());
-				if (store) sequences.push_back(sequence);
+				if (store) sequences.emplace_back(sequence);
 			}
 			callback(name, sequence);
 		});
@@ -37,7 +38,7 @@ public:
 		assert(names.size() == sequences.size());
 		for (size_t i = 0; i < names.size(); i++)
 		{
-			callback(i, sequences[i]);
+			callback(i, sequences[i].toString());
 		}
 	}
 	template <typename F>
@@ -50,20 +51,20 @@ public:
 		{
 			for (auto i : ReadStorageMemoryIterables)
 			{
-				callback(i, sequences[i], positions[i], hashes[i]);
+				callback(i, sequences[i].toString(), positions[i], hashes[i]);
 			}
 		}
 		else
 		{
 			for (size_t i = 0; i < names.size(); i++)
 			{
-				callback(i, sequences[i], positions[i], hashes[i]);
+				callback(i, sequences[i].toString(), positions[i], hashes[i]);
 			}
 		}
 	}
 	std::pair<std::string, std::string> getRead(size_t i) const;
 	const std::vector<std::string>& getNames() const;
-	const std::string& getSequence(size_t i) const;
+	std::string getSequence(size_t i) const;
 	const std::vector<size_t>& getRawReadLengths() const;
 	const std::vector<size_t>& getPositions(size_t i) const;
 	const std::vector<HashType>& getHashes(size_t i) const;
@@ -73,7 +74,7 @@ public:
 private:
 	std::vector<std::string> names;
 	std::vector<size_t> rawReadLengths;
-	std::vector<std::string> sequences;
+	std::vector<TwobitString> sequences;
 	std::vector<std::vector<size_t>> positions;
 	std::vector<std::vector<HashType>> hashes;
 };
