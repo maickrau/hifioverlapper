@@ -3,6 +3,7 @@
 
 #include <string>
 #include <tuple>
+#include "ReadStorage.h"
 #include "SparseEdgeContainer.h"
 #include "HashList.h"
 #include "RankBitvector.h"
@@ -25,6 +26,7 @@ class KmerCorrector
 public:
 	KmerCorrector(size_t kmerSize, size_t minSolidCoverage, size_t minAmbiguousCoverage);
 	void buildGraph(const ReadpartIterator& iterator, size_t numThreads);
+	void buildGraph(const ReadStorage& iterator, size_t numThreads);
 	std::pair<std::string, bool> getCorrectedSequence(const std::string& rawSeq, const std::vector<size_t>& positions, const std::vector<HashType>& hashes) const;
 private:
 	std::pair<size_t, bool> findBubble(std::pair<size_t, bool> start) const;

@@ -6,32 +6,21 @@
 #include <set>
 #include <thread>
 #include <concurrentqueue.h>
+#include "ReadHelper.h"
 #include "KmerCorrector.h"
 #include "ReadStorage.h"
 #include "MatchIndex.h"
 
 template <typename F>
-void iterateCorrectedSequences(size_t kmerSize, size_t numThreads, const MatchIndex& matchIndex, const ReadStorage& storage, F callback)
+void iterateCorrectedSequences(size_t kmerSize, size_t numThreads, const MatchIndex& matchIndex, ReadStorage& storage, F callback)
 {
-	size_t windowSize = kmerSize/2;
-	if (windowSize > 50) windowSize = 50;
-	ReadpartIterator partIterator { kmerSize, windowSize, ErrorMasking::No, 1, std::vector<std::string>{}, false, "" };
-	std::unordered_map<std::string, size_t> readNameToId;
-	storage.iterateReadsFromStorage([&partIterator, &storage, &readNameToId](size_t readid, const std::string& readSequence)
-	{
-		std::pair<std::string, std::string> nameAndSequence;
-		nameAndSequence.first = storage.getNames()[readid];
-		readNameToId[nameAndSequence.first] = readid;
-		nameAndSequence.second = readSequence;
-		partIterator.addMemoryRead(nameAndSequence);
-	});
 	std::atomic<bool> readDone;
 	readDone = false;
 	moodycamel::ConcurrentQueue<std::shared_ptr<std::pair<size_t, std::vector<size_t>>>> sequenceQueue;
 	std::vector<std::thread> threads;
 	for (size_t i = 0; i < numThreads; i++)
 	{
-		threads.emplace_back([&readDone, &partIterator, &sequenceQueue, &storage, kmerSize, callback]()
+		threads.emplace_back([&readDone, &sequenceQueue, &storage, kmerSize, callback]()
 		{
 			while (true)
 			{
@@ -48,18 +37,18 @@ void iterateCorrectedSequences(size_t kmerSize, size_t numThreads, const MatchIn
 				}
 				if (got->second.size() <= 5)
 				{
-					callback(got->first, storage.getRead(got->first).second, false);
+					callback(got->first, storage.getSequence(got->first), false);
 					continue;
 				}
 				got->second.push_back(got->first);
-				partIterator.setMemoryReadIterables(got->second);
+				storage.setMemoryIterables(got->second);
 				KmerCorrector corrector { kmerSize, 5, 3 };
-				corrector.buildGraph(partIterator, 1);
-				partIterator.setMemoryReadIterables(std::vector<size_t> { got->first });
-				partIterator.iterateHashes([&corrector, callback, &got](const ReadInfo& read, const SequenceCharType& seq, const SequenceLengthType& poses, const std::string& rawSeq, const std::vector<size_t>& positions, const std::vector<HashType>& hashes)
+				corrector.buildGraph(storage, 1);
+				storage.setMemoryIterables(std::vector<size_t> { got->first });
+				storage.iterateReadsAndHashesFromStorage([&corrector, callback](const size_t readId, const std::string& rawSeq, const std::vector<size_t>& positions, const std::vector<HashType>& hashes)
 				{
 					std::pair<std::string, bool> corrected = corrector.getCorrectedSequence(rawSeq, positions, hashes);
-					callback(got->first, corrected.first, corrected.second);
+					callback(readId, corrected.first, corrected.second);
 				});
 			}
 		});
@@ -93,7 +82,7 @@ void iterateCorrectedSequences(size_t kmerSize, size_t numThreads, const MatchIn
 	for (size_t i = 0; i < processed.size(); i++)
 	{
 		if (processed[i]) continue;
-		callback(i, storage.getRead(i).second, false);
+		callback(i, storage.getSequence(i), false);
 	}
 }
 
@@ -120,6 +109,10 @@ int main(int argc, char** argv)
 			matchIndex.addMatchesFromRead(readName, indexMutex, sequence);
 		});
 	}
+	size_t correctWindowSize = correctk/2;
+	if (correctWindowSize > 50) correctWindowSize = 50;
+	ReadpartIterator hashFinder { correctk, correctWindowSize, ErrorMasking::No, 1, std::vector<std::string>{}, false, "" };
+	storage.buildHashes(hashFinder);
 	std::mutex writeMutex;
 	size_t numCorrected = 0;
 	size_t numNotCorrected = 0;

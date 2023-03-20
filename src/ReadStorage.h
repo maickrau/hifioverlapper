@@ -7,6 +7,8 @@
 #include "ReadHelper.h"
 #include "fastqloader.h"
 
+extern thread_local std::vector<size_t> ReadStorageMemoryIterables;
+
 class ReadStorage
 {
 public:
@@ -38,14 +40,42 @@ public:
 			callback(i, sequences[i]);
 		}
 	}
+	template <typename F>
+	void iterateReadsAndHashesFromStorage(F callback) const
+	{
+		assert(names.size() == sequences.size());
+		assert(positions.size() == sequences.size());
+		assert(hashes.size() == positions.size());
+		if (ReadStorageMemoryIterables.size() > 0)
+		{
+			for (auto i : ReadStorageMemoryIterables)
+			{
+				callback(i, sequences[i], positions[i], hashes[i]);
+			}
+		}
+		else
+		{
+			for (size_t i = 0; i < names.size(); i++)
+			{
+				callback(i, sequences[i], positions[i], hashes[i]);
+			}
+		}
+	}
 	std::pair<std::string, std::string> getRead(size_t i) const;
 	const std::vector<std::string>& getNames() const;
+	const std::string& getSequence(size_t i) const;
 	const std::vector<size_t>& getRawReadLengths() const;
+	const std::vector<size_t>& getPositions(size_t i) const;
+	const std::vector<HashType>& getHashes(size_t i) const;
+	void buildHashes(const ReadpartIterator& partIterator);
 	size_t size() const;
+	void setMemoryIterables(const std::vector<size_t>& iterables);
 private:
 	std::vector<std::string> names;
 	std::vector<size_t> rawReadLengths;
 	std::vector<std::string> sequences;
+	std::vector<std::vector<size_t>> positions;
+	std::vector<std::vector<HashType>> hashes;
 };
 
 #endif
