@@ -1,3 +1,4 @@
+#include <queue>
 #include <unordered_set>
 #include <vector>
 #include <set>
@@ -71,26 +72,38 @@ void loadKmerSequences(const ReadpartIterator& partIterator, const size_t kmerSi
 	});
 }
 
-std::vector<std::pair<size_t, bool>> getUniqueAltPath(const HashList& reads, const SparseEdgeContainer& edges, const std::unordered_set<size_t>& pathHashes, const RankBitvector& hasSequence, const std::vector<bool>& hasFwCoverage, const std::vector<bool>& hasBwCoverage, const std::pair<size_t, bool> start, const std::pair<size_t, bool> end)
+class DistantKmerComparer
+{
+public:
+	bool operator()(const std::pair<size_t, std::pair<size_t, bool>> left, const std::pair<size_t, std::pair<size_t, bool>> right) const
+	{
+		return left.first > right.first;
+	}
+};
+
+std::vector<std::pair<size_t, bool>> getUniqueAltPath(const HashList& reads, const size_t kmerSize, const SparseEdgeContainer& edges, const RankBitvector& hasSequence, const std::vector<bool>& hasFwCoverage, const std::vector<bool>& hasBwCoverage, const std::pair<size_t, bool> start, const std::pair<size_t, bool> end, const size_t maxLength)
 {
 	if (end == start) return std::vector<std::pair<size_t, bool>>{};
 	std::set<std::pair<size_t, bool>> bwVisited;
-	std::vector<std::pair<size_t, bool>> checkStack;
-	checkStack.emplace_back(reverse(end));
+	std::priority_queue<std::pair<size_t, std::pair<size_t, bool>>, std::vector<std::pair<size_t, std::pair<size_t, bool>>>, DistantKmerComparer> checkStack;
+	checkStack.emplace(0, reverse(end));
 	while (checkStack.size() > 0)
 	{
-		auto top = checkStack.back();
-		checkStack.pop_back();
+		auto topandlen = checkStack.top();
+		checkStack.pop();
+		size_t distance = topandlen.first;
+		std::pair<size_t, bool> top = topandlen.second;
+		if (distance > maxLength) continue;
 		if (bwVisited.count(top) == 1) continue;
 		bwVisited.insert(top);
 		if (bwVisited.size() > 1000) return std::vector<std::pair<size_t, bool>>{};
 		for (auto edge : edges[top])
 		{
 			if (edge == start) return std::vector<std::pair<size_t, bool>>{};
-			if (pathHashes.count(edge.first) == 1) continue;
 			size_t rank = hasSequence.getRank(edge.first);
 			if (!hasFwCoverage[rank] || !hasBwCoverage[rank]) continue;
-			checkStack.push_back(edge);
+			size_t extra = kmerSize - reads.getOverlap(top, edge);
+			checkStack.emplace(distance + extra, edge);
 		}
 	}
 	std::vector<std::pair<size_t, bool>> result;
@@ -487,13 +500,11 @@ std::pair<std::string, bool> KmerCorrector::getCorrectedSequence(const std::stri
 {
 	if (positions.size() == 0) return std::make_pair(rawSeq, false);
 	std::vector<std::pair<size_t, bool>> rawPath;
-	std::unordered_set<size_t> pathHashes;
 	for (size_t i = 0; i < positions.size(); i++)
 	{
 		const HashType fwHash = hashes[i];
 		rawPath.push_back(reads.getNodeOrNull(fwHash));
 		assert(rawPath.back().first < reads.size());
-		pathHashes.insert(rawPath.back().first);
 	}
 	assert(rawPath.size() == positions.size());
 	std::vector<std::tuple<size_t, size_t, std::vector<std::pair<size_t, bool>>>> fixlist;
@@ -515,8 +526,9 @@ std::pair<std::string, bool> KmerCorrector::getCorrectedSequence(const std::stri
 			lastSolid = i;
 			continue;
 		}
-		std::vector<std::pair<size_t, bool>> uniqueAltPath = getUniqueAltPath(reads, edges, pathHashes, hasSequence, hasFwCoverage, hasBwCoverage, rawPath[lastSolid], rawPath[i]);
-		if (uniqueAltPath.size() == 0)
+		size_t maxLength = positions[i] - positions[lastSolid] + 100;
+		std::vector<std::pair<size_t, bool>> uniqueAltPath = getUniqueAltPath(reads, kmerSize, edges, hasSequence, hasFwCoverage, hasBwCoverage, rawPath[lastSolid], rawPath[i], maxLength);
+		if (uniqueAltPath.size() == 0 || vecmatch(uniqueAltPath, rawPath, lastSolid, i+1))
 		{
 			lastSolid = i;
 			continue;
