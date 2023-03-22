@@ -8,37 +8,6 @@
 void loadReadsAsHashesMultithread(HashList& result, const size_t kmerSize, const ReadpartIterator& partIterator, const size_t numThreads, std::ostream& log);
 SparseEdgeContainer getCoveredEdges(const HashList& hashlist, size_t minCoverage);
 
-void loadReadsAsHashesMultithread(HashList& result, const size_t kmerSize, const ReadStorage& storage, const size_t numThreads)
-{
-	std::atomic<size_t> totalNodes = 0;
-	storage.iterateReadsAndHashesFromStorage([&result, &totalNodes, kmerSize](const size_t readId, const std::string& rawSeq, const std::vector<size_t>& positions, const std::vector<HashType>& hashes)
-	{
-		size_t lastMinimizerPosition = std::numeric_limits<size_t>::max();
-		std::pair<size_t, bool> last { std::numeric_limits<size_t>::max(), true };
-		assert(positions.size() == hashes.size());
-		for (size_t i = 0; i < positions.size(); i++)
-		{
-			const auto pos = positions[i];
-			const HashType fwHash = hashes[i];
-			assert(last.first == std::numeric_limits<size_t>::max() || pos - lastMinimizerPosition <= kmerSize);
-			std::pair<size_t, bool> current = result.addNode(fwHash);
-			size_t overlap = lastMinimizerPosition + kmerSize - pos;
-			assert(pos+kmerSize <= rawSeq.size());
-			assert(lastMinimizerPosition == std::numeric_limits<size_t>::max() || pos - lastMinimizerPosition < kmerSize);
-			if (last.first != std::numeric_limits<size_t>::max())
-			{
-				assert(lastMinimizerPosition + kmerSize >= pos);
-				result.addSequenceOverlap(last, current, overlap);
-				auto pair = canon(last, current);
-				result.addEdgeCoverage(pair.first, pair.second);
-			}
-			lastMinimizerPosition = pos;
-			last = current;
-			totalNodes += 1;
-		};
-	});
-}
-
 void ConcatenatedStringStorage::resize(size_t numItems, size_t k)
 {
 	this->k = k;
@@ -546,24 +515,87 @@ void KmerCorrector::buildGraph(const ReadpartIterator& partIterator, size_t numT
 	forbidHomopolymerErrors();
 }
 
-void KmerCorrector::buildGraph(const ReadStorage& storage, size_t numThreads)
+void KmerCorrector::loadReadsAsHashesAndKmerSequencesMultithread(HashList& result, const size_t kmerSize, const ReadStorage& storage, const size_t numThreads)
 {
-	loadReadsAsHashesMultithread(reads, kmerSize, storage, numThreads);
 	hasSequence.resize(reads.size());
 	size_t totalWithSequence = 0;
-	for (size_t i = 0; i < reads.size(); i++)
+	std::vector<std::pair<size_t, std::string>> sequences;
+	std::mutex sequenceMutex;
+	storage.iterateReadsAndHashesFromStorage([this, &result, kmerSize, &sequenceMutex, &totalWithSequence, &sequences](const size_t readId, const std::string& rawSeq, const std::vector<size_t>& positions, const std::vector<HashType>& hashes)
 	{
-		if (reads.coverage.get(i) < minAmbiguousCoverage) continue;
-		totalWithSequence += 1;
-		hasSequence.set(i, true);
-	}
+		size_t lastMinimizerPosition = std::numeric_limits<size_t>::max();
+		std::pair<size_t, bool> last { std::numeric_limits<size_t>::max(), true };
+		assert(positions.size() == hashes.size());
+		for (size_t i = 0; i < positions.size(); i++)
+		{
+			const auto pos = positions[i];
+			const HashType fwHash = hashes[i];
+			assert(last.first == std::numeric_limits<size_t>::max() || pos - lastMinimizerPosition <= kmerSize);
+			std::pair<size_t, bool> current = result.addNode(fwHash);
+			size_t overlap = lastMinimizerPosition + kmerSize - pos;
+			assert(pos+kmerSize <= rawSeq.size());
+			assert(lastMinimizerPosition == std::numeric_limits<size_t>::max() || pos - lastMinimizerPosition < kmerSize);
+			if (last.first != std::numeric_limits<size_t>::max())
+			{
+				assert(lastMinimizerPosition + kmerSize >= pos);
+				result.addSequenceOverlap(last, current, overlap);
+				auto pair = canon(last, current);
+				result.addEdgeCoverage(pair.first, pair.second);
+			}
+			lastMinimizerPosition = pos;
+			last = current;
+			{
+				std::lock_guard lock { sequenceMutex };
+				if (current.first == hasSequence.size())
+				{
+					hasSequence.push_back(false);
+					hasFwCoverage.push_back(false);
+					hasBwCoverage.push_back(false);
+				}
+				assert(current.first < hasSequence.size());
+				if (!hasSequence.get(current.first))
+				{
+					if (current.second)
+					{
+						hasFwCoverage[current.first] = true;
+					}
+					else
+					{
+						hasBwCoverage[current.first] = true;
+					}
+					if (hasFwCoverage[current.first] && hasBwCoverage[current.first] && result.coverage.get(current.first) >= minAmbiguousCoverage)
+					{
+						totalWithSequence += 1;
+						hasSequence.set(current.first, true);
+						std::string seqHere = rawSeq.substr(pos, kmerSize);
+						assert(seqHere.size() == kmerSize);
+						if (!current.second) seqHere = revCompRaw(seqHere);
+						sequences.emplace_back(current.first, seqHere);
+					}
+				}
+			}
+		};
+	});
+	assert(hasSequence.size() == result.size());
 	hasSequence.buildRanks();
+	hasFwCoverage.clear();
+	hasFwCoverage.resize(totalWithSequence, true);
+	hasBwCoverage.clear();
+	hasBwCoverage.resize(totalWithSequence, true);
 	kmerSequences.resize(totalWithSequence, kmerSize);
-	hasFwCoverage.resize(totalWithSequence, false);
-	hasBwCoverage.resize(totalWithSequence, false);
-	loadKmerSequences(storage, kmerSize, reads, hasSequence, kmerSequences, hasFwCoverage, hasBwCoverage);
+	assert(sequences.size() == totalWithSequence);
+	for (size_t i = 0; i < sequences.size(); i++)
+	{
+		size_t sequenceIndex = hasSequence.getRank(sequences[i].first);
+		kmerSequences.setSequence(sequenceIndex, sequences[i].second);
+	}
+}
+
+void KmerCorrector::buildGraph(const ReadStorage& storage, size_t numThreads)
+{
+	loadReadsAsHashesAndKmerSequencesMultithread(reads, kmerSize, storage, numThreads);
 	edges = getCoveredEdges(reads, minAmbiguousCoverage);
-	removedHomopolymerError.resize(totalWithSequence, false);
+	removedHomopolymerError.resize(kmerSequences.size(), false);
 	forbidHomopolymerErrors();
 }
 
@@ -594,6 +626,7 @@ std::pair<std::string, bool> KmerCorrector::getCorrectedSequence(const std::stri
 	for (size_t i = 0; i < positions.size(); i++)
 	{
 		if (reads.coverage.get(rawPath[i].first) < minSolidCoverage) continue;
+		if (!hasSequence.get(rawPath[i].first)) continue;
 		size_t rank = hasSequence.getRank(rawPath[i].first);
 		if (removedHomopolymerError[rank]) continue;
 		if (!hasFwCoverage[rank] || !hasBwCoverage[rank]) continue;
@@ -622,6 +655,7 @@ std::pair<std::string, bool> KmerCorrector::getCorrectedSequence(const std::stri
 		for (size_t j = 0; j < uniqueAltPath.size(); j++)
 		{
 			if (reads.coverage.get(uniqueAltPath[j].first) < minSolidCoverage) validAltPath = false;
+			if (!hasSequence.get(uniqueAltPath[j].first)) validAltPath = false;
 		}
 		if (validAltPath) fixlist.emplace_back(positions[lastSolid], positions[i]+kmerSize, uniqueAltPath);
 		lastSolid = i;

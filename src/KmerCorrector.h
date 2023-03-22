@@ -29,6 +29,7 @@ public:
 	void buildGraph(const ReadStorage& iterator, size_t numThreads);
 	std::pair<std::string, bool> getCorrectedSequence(const std::string& rawSeq, const std::vector<size_t>& positions, const std::vector<HashType>& hashes) const;
 private:
+	void loadReadsAsHashesAndKmerSequencesMultithread(HashList& result, const size_t kmerSize, const ReadStorage& storage, const size_t numThreads);
 	std::pair<size_t, bool> findBubble(std::pair<size_t, bool> start) const;
 	void forbidPathNodes(const std::vector<std::pair<size_t, bool>>& path);
 	void allowPathNodes(const std::vector<std::pair<size_t, bool>>& path);
