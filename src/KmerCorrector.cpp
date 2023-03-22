@@ -42,65 +42,6 @@ reads(kmerSize)
 
 }
 
-void loadKmerSequences(const ReadpartIterator& partIterator, const size_t kmerSize, const HashList& reads, const RankBitvector& hasSequence, ConcatenatedStringStorage& kmerSequences, std::vector<bool>& hasFwCoverage, std::vector<bool>& hasBwCoverage)
-{
-	std::vector<bool> loaded;
-	loaded.resize(kmerSequences.size(), false);
-	partIterator.iterateHashes([&hasSequence, &kmerSequences, &reads, &loaded, &hasFwCoverage, &hasBwCoverage, kmerSize](const ReadInfo& read, const SequenceCharType& seq, const SequenceLengthType& poses, const std::string& rawSeq, const std::vector<size_t>& positions, const std::vector<HashType>& hashes)
-	{
-		for (size_t i = 0; i < positions.size(); i++)
-		{
-			const HashType fwHash = hashes[i];
-			std::pair<size_t, bool> current = reads.getNodeOrNull(fwHash);
-			if (!hasSequence.get(current.first)) continue;
-			size_t sequenceIndex = hasSequence.getRank(current.first);
-			if (current.second)
-			{
-				hasFwCoverage[sequenceIndex] = true;
-			}
-			else
-			{
-				hasBwCoverage[sequenceIndex] = true;
-			}
-			if (loaded[sequenceIndex]) continue;
-			std::string sequence = rawSeq.substr(positions[i], kmerSize);
-			assert(sequence.size() == kmerSize);
-			if (!current.second) sequence = revCompRaw(sequence);
-			kmerSequences.setSequence(sequenceIndex, sequence);
-			loaded[sequenceIndex] = true;
-		}
-	});
-}
-
-void loadKmerSequences(const ReadStorage& storage, const size_t kmerSize, const HashList& reads, const RankBitvector& hasSequence, ConcatenatedStringStorage& kmerSequences, std::vector<bool>& hasFwCoverage, std::vector<bool>& hasBwCoverage)
-{
-	std::vector<bool> loaded;
-	loaded.resize(kmerSequences.size(), false);
-	storage.iterateReadsAndHashesFromStorage([&hasSequence, &kmerSequences, &reads, &loaded, &hasFwCoverage, &hasBwCoverage, kmerSize](const size_t readId, const std::string& rawSeq, const std::vector<size_t>& positions, const std::vector<HashType>& hashes)
-	{
-		for (size_t i = 0; i < positions.size(); i++)
-		{
-			const HashType fwHash = hashes[i];
-			std::pair<size_t, bool> current = reads.getNodeOrNull(fwHash);
-			if (!hasSequence.get(current.first)) continue;
-			size_t sequenceIndex = hasSequence.getRank(current.first);
-			if (current.second)
-			{
-				hasFwCoverage[sequenceIndex] = true;
-			}
-			else
-			{
-				hasBwCoverage[sequenceIndex] = true;
-			}
-			if (loaded[sequenceIndex]) continue;
-			std::string sequence = rawSeq.substr(positions[i], kmerSize);
-			assert(sequence.size() == kmerSize);
-			if (!current.second) sequence = revCompRaw(sequence);
-			kmerSequences.setSequence(sequenceIndex, sequence);
-			loaded[sequenceIndex] = true;
-		}
-	});
-}
 
 class DistantKmerComparer
 {
@@ -111,7 +52,7 @@ public:
 	}
 };
 
-std::vector<std::pair<size_t, bool>> getUniqueAltPath(const HashList& reads, const size_t kmerSize, const SparseEdgeContainer& edges, const RankBitvector& hasSequence, const std::vector<bool>& hasFwCoverage, const std::vector<bool>& hasBwCoverage, const std::pair<size_t, bool> start, const std::pair<size_t, bool> end, const size_t maxLength)
+std::vector<std::pair<size_t, bool>> getUniqueAltPath(const HashList& reads, const size_t kmerSize, const SparseEdgeContainer& edges, const RankBitvector& hasSequence, const std::pair<size_t, bool> start, const std::pair<size_t, bool> end, const size_t maxLength)
 {
 	if (end == start) return std::vector<std::pair<size_t, bool>>{};
 	std::set<std::pair<size_t, bool>> bwVisited;
@@ -130,8 +71,7 @@ std::vector<std::pair<size_t, bool>> getUniqueAltPath(const HashList& reads, con
 		for (auto edge : edges[top])
 		{
 			if (edge == start) return std::vector<std::pair<size_t, bool>>{};
-			size_t rank = hasSequence.getRank(edge.first);
-			if (!hasFwCoverage[rank] || !hasBwCoverage[rank]) continue;
+			if (!hasSequence.get(edge.first)) continue;
 			size_t extra = kmerSize - reads.getOverlap(top, edge);
 			checkStack.emplace(distance + extra, edge);
 		}
@@ -226,8 +166,6 @@ std::pair<size_t, bool> KmerCorrector::findBubble(std::pair<size_t, bool> start)
 		for (auto u : edges[v])
 		{
 			if (!hasSequence.get(u.first)) continue;
-			size_t rank = hasSequence.getRank(u.first);
-			if (!hasFwCoverage[rank] || !hasBwCoverage[rank]) continue;
 			if (u == v) return bubbleEnd;
 			if (u == start) return bubbleEnd;
 			assert(visited.count(u) == 0);
@@ -238,8 +176,6 @@ std::pair<size_t, bool> KmerCorrector::findBubble(std::pair<size_t, bool> start)
 			{
 				if (w == u) return bubbleEnd;
 				if (!hasSequence.get(w.first)) continue;
-				size_t rank = hasSequence.getRank(w.first);
-				if (!hasFwCoverage[rank] || !hasBwCoverage[rank]) continue;
 				if (visited.count(reverse(w)) == 0)
 				{
 					hasUnvisitedInneighbor = true;
@@ -351,8 +287,6 @@ void KmerCorrector::enumeratePathsRecursion(std::vector<std::vector<std::pair<si
 	for (auto node : edges[currentPath.back()])
 	{
 		if (!hasSequence.get(node.first)) continue;
-		size_t rank = hasSequence.getRank(node.first);
-		if (!hasFwCoverage[rank] || !hasBwCoverage[rank]) continue;
 		currentPath.push_back(node);
 		if (node == end)
 		{
@@ -477,8 +411,6 @@ void KmerCorrector::forbidHomopolymerErrors()
 	for (size_t i = 0; i < hasSequence.size(); i++)
 	{
 		if (!hasSequence.get(i)) continue;
-		size_t rank = hasSequence.getRank(i);
-		if (!hasFwCoverage[rank] || !hasBwCoverage[rank]) continue;
 		auto bubbleEndFw = findBubble(std::make_pair(i, true));
 		if (bubbleEndFw.first != std::numeric_limits<size_t>::max())
 		{
@@ -550,7 +482,6 @@ std::pair<std::string, bool> KmerCorrector::getCorrectedSequence(const std::stri
 		if (!hasSequence.get(rawPath[i].first)) continue;
 		size_t rank = hasSequence.getRank(rawPath[i].first);
 		if (removedHomopolymerError[rank]) continue;
-		if (!hasFwCoverage[rank] || !hasBwCoverage[rank]) continue;
 		if (lastSolid == std::numeric_limits<size_t>::max())
 		{
 			assert(fixlist.size() == 0);
@@ -563,7 +494,7 @@ std::pair<std::string, bool> KmerCorrector::getCorrectedSequence(const std::stri
 			continue;
 		}
 		size_t maxLength = positions[i] - positions[lastSolid] + 100;
-		std::vector<std::pair<size_t, bool>> uniqueAltPath = getUniqueAltPath(reads, kmerSize, edges, hasSequence, hasFwCoverage, hasBwCoverage, rawPath[lastSolid], rawPath[i], maxLength);
+		std::vector<std::pair<size_t, bool>> uniqueAltPath = getUniqueAltPath(reads, kmerSize, edges, hasSequence, rawPath[lastSolid], rawPath[i], maxLength);
 		if (uniqueAltPath.size() == 0 || vecmatch(uniqueAltPath, rawPath, lastSolid, i+1))
 		{
 			lastSolid = i;

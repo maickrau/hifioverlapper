@@ -36,7 +36,9 @@ private:
 		size_t totalWithSequence = 0;
 		std::vector<std::pair<size_t, std::string>> sequences;
 		std::mutex sequenceMutex;
-		readGetter([this, &result, kmerSize, &sequenceMutex, &totalWithSequence, &sequences](const std::string& rawSeq, const std::vector<size_t>& positions, const std::vector<HashType>& hashes)
+		std::vector<bool> hasFwCoverage;
+		std::vector<bool> hasBwCoverage;
+		readGetter([this, &result, kmerSize, &sequenceMutex, &totalWithSequence, &hasFwCoverage, &hasBwCoverage, &sequences](const std::string& rawSeq, const std::vector<size_t>& positions, const std::vector<HashType>& hashes)
 		{
 			size_t lastMinimizerPosition = std::numeric_limits<size_t>::max();
 			std::pair<size_t, bool> last { std::numeric_limits<size_t>::max(), true };
@@ -93,10 +95,6 @@ private:
 		});
 		assert(hasSequence.size() == result.size());
 		hasSequence.buildRanks();
-		hasFwCoverage.clear();
-		hasFwCoverage.resize(totalWithSequence, true);
-		hasBwCoverage.clear();
-		hasBwCoverage.resize(totalWithSequence, true);
 		kmerSequences.resize(totalWithSequence, kmerSize);
 		assert(sequences.size() == totalWithSequence);
 		for (size_t i = 0; i < sequences.size(); i++)
@@ -121,8 +119,6 @@ private:
 	ConcatenatedStringStorage kmerSequences;
 	RankBitvector hasSequence;
 	HashList reads;
-	std::vector<bool> hasFwCoverage;
-	std::vector<bool> hasBwCoverage;
 	std::vector<bool> removedHomopolymerError;
 };
 
