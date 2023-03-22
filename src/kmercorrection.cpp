@@ -31,7 +31,7 @@ int main(int argc, char** argv)
 	size_t ambiguousCoverage = 3;
 	ReadpartIterator partIterator { kmerSize, windowSize, ErrorMasking::No, numThreads, readFiles, false, "" };
 	KmerCorrector corrector { kmerSize, solidCoverage, ambiguousCoverage };
-	corrector.buildGraph(partIterator, numThreads);
+	corrector.buildGraph(partIterator);
 	std::cerr << "correcting reads" << std::endl;
 	std::mutex writeMutex;
 	size_t countCorrected = 0;
