@@ -4,6 +4,10 @@
 #include <set>
 #include "KmerCorrector.h"
 
+thread_local std::vector<uint8_t> localCoverage;
+thread_local std::vector<bool> hasLocalFw;
+thread_local std::vector<bool> hasLocalBw;
+
 // defined in MBG.cpp but not exposed, so declare them here too
 void loadReadsAsHashesMultithread(HashList& result, const size_t kmerSize, const ReadpartIterator& partIterator, const size_t numThreads, std::ostream& log);
 SparseEdgeContainer getCoveredEdges(const HashList& hashlist, size_t minCoverage);
@@ -41,7 +45,6 @@ reads(kmerSize)
 {
 
 }
-
 
 class DistantKmerComparer
 {
@@ -144,6 +147,37 @@ std::string getFixedSequence(const std::string& rawSeq, const HashList& reads, c
 	return result;
 }
 
+void KmerCorrector::initializeThreadCoverageFullGraph()
+{
+	localCoverage.resize(0, 0);
+}
+
+void KmerCorrector::filterToReadCoverage(const ReadStorage& iterator)
+{
+	localCoverage.resize(removedHomopolymerError.size(), 0);
+	hasLocalBw.resize(removedHomopolymerError.size(), false);
+	hasLocalFw.resize(removedHomopolymerError.size(), false);
+	for (size_t i = 0; i < localCoverage.size(); i++)
+	{
+		localCoverage[i] = 0;
+		hasLocalFw[i] = false;
+		hasLocalBw[i] = false;
+	}
+	iterator.iterateReadsAndHashesFromStorage([this](const size_t readId, const std::string& rawSeq, const std::vector<size_t>& positions, const std::vector<HashType>& hashes)
+	{
+		for (auto hash : hashes)
+		{
+			std::pair<size_t, bool> current = reads.getNodeOrNull(hash);
+			if (current.first >= hasSequence.size()) continue;
+			if (!hasSequence.get(current.first)) continue;
+			size_t rank = hasSequence.getRank(current.first);
+			if (localCoverage[rank] < std::numeric_limits<uint8_t>::max()) localCoverage[rank] += 1;
+			if (current.second) hasLocalFw[rank] = true;
+			if (!current.second) hasLocalBw[rank] = true;
+		}
+	});
+}
+
 std::pair<size_t, bool> KmerCorrector::findBubble(std::pair<size_t, bool> start) const
 {
 	std::vector<std::pair<size_t, bool>> S;
@@ -235,13 +269,22 @@ bool homopolymerAdjacent(const std::vector<size_t>& left, const std::vector<size
 	return true;
 }
 
+size_t KmerCorrector::getCoverage(size_t kmer) const
+{
+	if (localCoverage.size() == 0) return reads.coverage.get(kmer);
+	if (!hasSequence.get(kmer)) return 0;
+	size_t rank = hasSequence.getRank(kmer);
+	if (!hasLocalBw[rank] || !hasLocalFw[rank]) return 0;
+	return localCoverage[rank];
+}
+
 size_t KmerCorrector::getPathCoverage(const std::vector<std::pair<size_t, bool>>& path) const
 {
 	assert(path.size() >= 1);
-	size_t result = reads.coverage.get(path[0].first);
+	size_t result = getCoverage(path[0].first);
 	for (size_t i = 1; i < path.size(); i++)
 	{
-		result = std::min(result, reads.coverage.get(path[i].first));
+		result = std::min(result, getCoverage(path[i].first));
 	}
 	return result;
 }
@@ -478,7 +521,7 @@ std::pair<std::string, bool> KmerCorrector::getCorrectedSequence(const std::stri
 	size_t lastSolid = std::numeric_limits<size_t>::max();
 	for (size_t i = 0; i < positions.size(); i++)
 	{
-		if (reads.coverage.get(rawPath[i].first) < minSolidCoverage) continue;
+		if (getCoverage(rawPath[i].first) < minSolidCoverage) continue;
 		if (!hasSequence.get(rawPath[i].first)) continue;
 		size_t rank = hasSequence.getRank(rawPath[i].first);
 		if (removedHomopolymerError[rank]) continue;
@@ -506,7 +549,7 @@ std::pair<std::string, bool> KmerCorrector::getCorrectedSequence(const std::stri
 		bool validAltPath = true;
 		for (size_t j = 0; j < uniqueAltPath.size(); j++)
 		{
-			if (reads.coverage.get(uniqueAltPath[j].first) < minSolidCoverage) validAltPath = false;
+			if (getCoverage(uniqueAltPath[j].first) < minSolidCoverage) validAltPath = false;
 			if (!hasSequence.get(uniqueAltPath[j].first)) validAltPath = false;
 		}
 		if (validAltPath) fixlist.emplace_back(positions[lastSolid], positions[i]+kmerSize, uniqueAltPath);

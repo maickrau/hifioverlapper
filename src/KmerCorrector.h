@@ -27,6 +27,8 @@ public:
 	KmerCorrector(size_t kmerSize, size_t minSolidCoverage, size_t minAmbiguousCoverage);
 	void buildGraph(const ReadpartIterator& iterator);
 	void buildGraph(const ReadStorage& iterator);
+	void filterToReadCoverage(const ReadStorage& iterator);
+	void initializeThreadCoverageFullGraph();
 	std::pair<std::string, bool> getCorrectedSequence(const std::string& rawSeq, const std::vector<size_t>& positions, const std::vector<HashType>& hashes) const;
 private:
 	template <typename F>
@@ -103,6 +105,7 @@ private:
 			kmerSequences.setSequence(sequenceIndex, sequences[i].second);
 		}
 	}
+	size_t getCoverage(size_t kmer) const;
 	std::pair<size_t, bool> findBubble(std::pair<size_t, bool> start) const;
 	void forbidPathNodes(const std::vector<std::pair<size_t, bool>>& path);
 	void allowPathNodes(const std::vector<std::pair<size_t, bool>>& path);

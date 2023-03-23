@@ -21,9 +21,11 @@ void iterateCorrectedSequences(size_t kmerSize, size_t numThreads, const MatchIn
 	std::vector<bool> processed;
 	processed.resize(storage.size(), false);
 	std::mutex processedMutex;
+	KmerCorrector corrector { kmerSize, 5, 3 };
+	corrector.buildGraph(storage);
 	for (size_t i = 0; i < numThreads; i++)
 	{
-		threads.emplace_back([&readDone, &sequenceQueue, &storage, kmerSize, &processed, &processedMutex, callback]()
+		threads.emplace_back([&readDone, &sequenceQueue, &storage, kmerSize, &processed, &processedMutex, &corrector, callback]()
 		{
 			while (true)
 			{
@@ -49,8 +51,7 @@ void iterateCorrectedSequences(size_t kmerSize, size_t numThreads, const MatchIn
 				}
 				got->second.push_back(got->first);
 				storage.setMemoryIterables(got->second);
-				KmerCorrector corrector { kmerSize, 5, 3 };
-				corrector.buildGraph(storage);
+				corrector.filterToReadCoverage(storage);
 				storage.setMemoryIterables(std::vector<size_t> { got->first });
 				storage.iterateReadsAndHashesFromStorage([&corrector, &processed, &processedMutex, callback](const size_t readId, const std::string& rawSeq, const std::vector<size_t>& positions, const std::vector<HashType>& hashes)
 				{
