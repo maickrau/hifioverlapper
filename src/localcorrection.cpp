@@ -18,9 +18,12 @@ void iterateCorrectedSequences(size_t kmerSize, size_t numThreads, const MatchIn
 	readDone = false;
 	moodycamel::ConcurrentQueue<std::shared_ptr<std::pair<size_t, std::vector<size_t>>>> sequenceQueue;
 	std::vector<std::thread> threads;
+	std::vector<bool> processed;
+	processed.resize(storage.size(), false);
+	std::mutex processedMutex;
 	for (size_t i = 0; i < numThreads; i++)
 	{
-		threads.emplace_back([&readDone, &sequenceQueue, &storage, kmerSize, callback]()
+		threads.emplace_back([&readDone, &sequenceQueue, &storage, kmerSize, &processed, &processedMutex, callback]()
 		{
 			while (true)
 			{
@@ -37,6 +40,10 @@ void iterateCorrectedSequences(size_t kmerSize, size_t numThreads, const MatchIn
 				}
 				if (got->second.size() <= 5)
 				{
+					{
+						std::lock_guard lock { processedMutex };
+						processed[got->first] = true;
+					}
 					callback(got->first, storage.getSequence(got->first), false);
 					continue;
 				}
@@ -45,19 +52,20 @@ void iterateCorrectedSequences(size_t kmerSize, size_t numThreads, const MatchIn
 				KmerCorrector corrector { kmerSize, 5, 3 };
 				corrector.buildGraph(storage);
 				storage.setMemoryIterables(std::vector<size_t> { got->first });
-				storage.iterateReadsAndHashesFromStorage([&corrector, callback](const size_t readId, const std::string& rawSeq, const std::vector<size_t>& positions, const std::vector<HashType>& hashes)
+				storage.iterateReadsAndHashesFromStorage([&corrector, &processed, &processedMutex, callback](const size_t readId, const std::string& rawSeq, const std::vector<size_t>& positions, const std::vector<HashType>& hashes)
 				{
 					std::pair<std::string, bool> corrected = corrector.getCorrectedSequence(rawSeq, positions, hashes);
 					callback(readId, corrected.first, corrected.second);
+					{
+						std::lock_guard lock { processedMutex };
+						processed[readId] = true;
+					}
 				});
 			}
 		});
 	}
-	std::vector<bool> processed;
-	processed.resize(storage.size(), false);
-	matchIndex.iterateMatchReadPairs([&sequenceQueue, &processed](size_t read, const std::unordered_set<size_t>& matches)
+	matchIndex.iterateMatchReadPairs([&sequenceQueue](size_t read, const std::unordered_set<size_t>& matches)
 	{
-		processed[read] = true;
 		std::shared_ptr<std::pair<size_t, std::vector<size_t>>> ptr = std::make_shared<std::pair<size_t, std::vector<size_t>>>();
 		ptr->second.insert(ptr->second.end(), matches.begin(), matches.end());
 		ptr->first = read;
