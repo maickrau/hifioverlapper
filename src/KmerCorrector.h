@@ -29,6 +29,7 @@ public:
 	void buildGraph(const ReadStorage& iterator);
 	void filterToReadCoverage(const ReadStorage& iterator);
 	void initializeThreadCoverageFullGraph();
+	const HashList& getHashlist() const;
 	std::pair<std::string, bool> getCorrectedSequence(const std::string& rawSeq, const std::vector<size_t>& positions, const std::vector<HashType>& hashes) const;
 private:
 	template <typename F>

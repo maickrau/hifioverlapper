@@ -163,17 +163,16 @@ void KmerCorrector::filterToReadCoverage(const ReadStorage& iterator)
 		hasLocalFw[i] = false;
 		hasLocalBw[i] = false;
 	}
-	iterator.iterateReadsAndHashesFromStorage([this](const size_t readId, const std::string& rawSeq, const std::vector<size_t>& positions, const std::vector<HashType>& hashes)
+	iterator.iterateKmersFromStorage([this](const size_t readId, const std::vector<size_t>& positions, const std::vector<std::pair<size_t, bool>>& kmers)
 	{
-		for (auto hash : hashes)
+		for (auto pair : kmers)
 		{
-			std::pair<size_t, bool> current = reads.getNodeOrNull(hash);
-			if (current.first >= hasSequence.size()) continue;
-			if (!hasSequence.get(current.first)) continue;
-			size_t rank = hasSequence.getRank(current.first);
+			if (pair.first >= hasSequence.size()) continue;
+			if (!hasSequence.get(pair.first)) continue;
+			size_t rank = hasSequence.getRank(pair.first);
 			if (localCoverage[rank] < std::numeric_limits<uint8_t>::max()) localCoverage[rank] += 1;
-			if (current.second) hasLocalFw[rank] = true;
-			if (!current.second) hasLocalBw[rank] = true;
+			if (pair.second) hasLocalFw[rank] = true;
+			if (!pair.second) hasLocalBw[rank] = true;
 		}
 	});
 }
@@ -558,4 +557,9 @@ std::pair<std::string, bool> KmerCorrector::getCorrectedSequence(const std::stri
 	if (fixlist.size() == 0) return std::make_pair(rawSeq, false);
 	std::string fixedSequence = getFixedSequence(rawSeq, reads, hasSequence, kmerSequences, kmerSize, fixlist);
 	return std::make_pair(fixedSequence, true);
+}
+
+const HashList& KmerCorrector::getHashlist() const
+{
+	return reads;
 }

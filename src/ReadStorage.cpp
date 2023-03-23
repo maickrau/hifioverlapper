@@ -55,6 +55,19 @@ void ReadStorage::buildHashes(const ReadpartIterator& partIterator)
 	assert(hashes.size() == sequences.size());
 }
 
+void ReadStorage::buildKmers(const HashList& hashlist)
+{
+	kmers.resize(hashes.size());
+	for (size_t i = 0; i < hashes.size(); i++)
+	{
+		kmers[i].resize(hashes[i].size());
+		for (size_t j = 0; j < hashes[i].size(); j++)
+		{
+			kmers[i][j] = hashlist.getNodeOrNull(hashes[i][j]);
+		}
+	}
+}
+
 void ReadStorage::setMemoryIterables(const std::vector<size_t>& iterables)
 {
 	ReadStorageMemoryIterables = iterables;

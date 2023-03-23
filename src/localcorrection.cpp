@@ -23,6 +23,7 @@ void iterateCorrectedSequences(size_t kmerSize, size_t numThreads, const MatchIn
 	std::mutex processedMutex;
 	KmerCorrector corrector { kmerSize, 5, 3 };
 	corrector.buildGraph(storage);
+	storage.buildKmers(corrector.getHashlist());
 	for (size_t i = 0; i < numThreads; i++)
 	{
 		threads.emplace_back([&readDone, &sequenceQueue, &storage, kmerSize, &processed, &processedMutex, &corrector, callback]()
