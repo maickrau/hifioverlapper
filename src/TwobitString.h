@@ -11,6 +11,7 @@ public:
 	TwobitString() = default;
 	TwobitString(const std::string&);
 	std::string toString() const;
+	std::string substr(size_t start, size_t size) const;
 	void resize(size_t size);
 	uint8_t get(size_t i) const;
 	void set(size_t i, uint8_t v);

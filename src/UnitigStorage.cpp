@@ -27,7 +27,7 @@ std::pair<size_t, bool> UnitigStorage::getNode(HashType fwHash)
 		}
 		kmer = std::make_pair(hashToNode.size(), false);
 		hashToNode[revhash] = kmer.first;
-		uniqueEdge.emplace_back(std::numeric_limits<size_t>::max());
+		uniqueEdge.emplace_back(std::numeric_limits<uint32_t>::max());
 		return kmer;
 	}
 	else
@@ -40,7 +40,7 @@ std::pair<size_t, bool> UnitigStorage::getNode(HashType fwHash)
 		}
 		kmer = std::make_pair(hashToNode.size(), true);
 		hashToNode[fwHash] = kmer.first;
-		uniqueEdge.emplace_back(std::numeric_limits<size_t>::max());
+		uniqueEdge.emplace_back(std::numeric_limits<uint32_t>::max());
 		return kmer;
 	}
 }
@@ -95,21 +95,21 @@ std::tuple<size_t, size_t, std::vector<std::pair<size_t, bool>>> UnitigStorage::
 
 void UnitigStorage::addEdge(std::pair<size_t, bool> from, std::pair<size_t, bool> to, size_t overlap)
 {
-	if (uniqueEdge[from] == std::numeric_limits<size_t>::max())
+	if (uniqueEdge[from] == std::numeric_limits<uint32_t>::max())
 	{
 		uniqueEdge[from] = pairToNum(to);
 	}
 	else if (uniqueEdge[from] != pairToNum(to))
 	{
-		uniqueEdge[from] = std::numeric_limits<size_t>::max()-1;
+		uniqueEdge[from] = std::numeric_limits<uint32_t>::max()-1;
 	}
-	if (uniqueEdge[reverse(to)] == std::numeric_limits<size_t>::max())
+	if (uniqueEdge[reverse(to)] == std::numeric_limits<uint32_t>::max())
 	{
 		uniqueEdge[reverse(to)] = pairToNum(reverse(from));
 	}
 	else if (uniqueEdge[reverse(to)] != pairToNum(reverse(from)))
 	{
-		uniqueEdge[reverse(to)] = std::numeric_limits<size_t>::max()-1;
+		uniqueEdge[reverse(to)] = std::numeric_limits<uint32_t>::max()-1;
 	}
 	auto c = canon(from, to);
 	auto key = std::make_pair(pairToNum(c.first), pairToNum(c.second));
@@ -170,28 +170,28 @@ std::string UnitigStorage::getSequence(const std::vector<std::pair<size_t, bool>
 void UnitigStorage::buildUnitigGraph()
 {
 	assert(hashToNode.size() == uniqueEdge.size());
-	kmerPositionInUnitig.resize(hashToNode.size(), std::make_pair(std::numeric_limits<size_t>::max(), std::numeric_limits<size_t>::max()));
+	kmerPositionInUnitig.resize(hashToNode.size(), std::make_pair(std::numeric_limits<uint32_t>::max(), std::numeric_limits<uint32_t>::max()));
 	for (size_t i = 0; i < kmerPositionInUnitig.size(); i++)
 	{
-		if (kmerPositionInUnitig[i].first != std::numeric_limits<size_t>::max()) continue;
+		if (kmerPositionInUnitig[i].first != std::numeric_limits<uint32_t>::max()) continue;
 		std::pair<size_t, bool> fw { i, true };
 		std::pair<size_t, bool> bw { i, false };
-		if (uniqueEdge[fw] >= std::numeric_limits<size_t>::max()-1)
+		if (uniqueEdge[fw] >= std::numeric_limits<uint32_t>::max()-1)
 		{
 			beginUnitig(bw);
 			continue;
 		}
-		if (uniqueEdge[bw] >= std::numeric_limits<size_t>::max()-1)
+		if (uniqueEdge[bw] >= std::numeric_limits<uint32_t>::max()-1)
 		{
 			beginUnitig(fw);
 			continue;
 		}
-		if (uniqueEdge[fw] < std::numeric_limits<size_t>::max()-1 && uniqueEdge[reverse(numToPair(uniqueEdge[fw]))] != pairToNum(bw))
+		if (uniqueEdge[fw] < std::numeric_limits<uint32_t>::max()-1 && uniqueEdge[reverse(numToPair(uniqueEdge[fw]))] != pairToNum(bw))
 		{
 			beginUnitig(bw);
 			continue;
 		}
-		if (uniqueEdge[bw] < std::numeric_limits<size_t>::max()-1 && uniqueEdge[reverse(numToPair(uniqueEdge[bw]))] != pairToNum(fw))
+		if (uniqueEdge[bw] < std::numeric_limits<uint32_t>::max()-1 && uniqueEdge[reverse(numToPair(uniqueEdge[bw]))] != pairToNum(fw))
 		{
 			beginUnitig(fw);
 			continue;
@@ -199,11 +199,11 @@ void UnitigStorage::buildUnitigGraph()
 	}
 	for (size_t i = 0; i < kmerPositionInUnitig.size(); i++)
 	{
-		if (kmerPositionInUnitig[i].first != std::numeric_limits<size_t>::max()) continue;
+		if (kmerPositionInUnitig[i].first != std::numeric_limits<uint32_t>::max()) continue;
 		beginUnitig(std::make_pair(i, true));
 	}
 	{
-		VectorWithDirection<size_t> tmp;
+		VectorWithDirection<uint32_t> tmp;
 		std::swap(tmp, uniqueEdge);
 	}
 	kmerSequenceLoaded.resize(hashToNode.size(), false);
@@ -214,7 +214,7 @@ void UnitigStorage::buildUnitigGraph()
 	size_t foundTips = 0;
 	for (size_t i = 0; i < kmerPositionInUnitig.size(); i++)
 	{
-		assert(kmerPositionInUnitig[i].first != std::numeric_limits<size_t>::max());
+		assert(kmerPositionInUnitig[i].first != std::numeric_limits<uint32_t>::max());
 		if (kmerPositionInUnitig[i].second == 0 || kmerPositionInUnitig[i].second == unitigLength[numToPair(kmerPositionInUnitig[i].first).first]-1)
 		{
 			unitigTip[i] = true;
@@ -254,7 +254,7 @@ void UnitigStorage::buildUnitigGraph()
 		unitigEdgeOverlap[key] = pair.second;
 	}
 	{
-		phmap::flat_hash_map<std::pair<size_t, size_t>, size_t> tmp;
+		phmap::flat_hash_map<std::pair<uint32_t, uint32_t>, uint16_t> tmp;
 		std::swap(tmp, kmerOverlap);
 	}
 	assert(kmerBpOffsetInsideUnitig.size() == unitigLength.size());
@@ -272,12 +272,12 @@ void UnitigStorage::beginUnitig(std::pair<size_t, bool> start)
 	std::vector<size_t> swapThese;
 	while (true)
 	{
-		assert(kmerPositionInUnitig[pos.first].first == std::numeric_limits<size_t>::max());
+		assert(kmerPositionInUnitig[pos.first].first == std::numeric_limits<uint32_t>::max());
 		kmerPositionInUnitig[pos.first] = std::make_pair(pairToNum(std::make_pair(thisUnitig, pos.second)), unitigLength[thisUnitig]);
 		kmerBpOffsetInsideUnitig[thisUnitig].push_back(bpOffset);
 		if (!pos.second) swapThese.push_back(pos.first);
 		unitigLength[thisUnitig] += 1;
-		if (uniqueEdge[pos] >= std::numeric_limits<size_t>::max()-1) break;
+		if (uniqueEdge[pos] >= std::numeric_limits<uint32_t>::max()-1) break;
 		std::pair<size_t, bool> next = numToPair(uniqueEdge[pos]);
 		if (uniqueEdge[reverse(next)] != pairToNum(reverse(pos))) break;
 		if (next.first == pos.first) break;
@@ -297,7 +297,7 @@ void UnitigStorage::beginUnitig(std::pair<size_t, bool> start)
 	assert(kmerPositionInUnitig[pos.first].second == 0 || kmerPositionInUnitig[pos.first].second == unitigLength[thisUnitig] - 1);
 	assert(kmerPositionInUnitig[start.first].second == 0 || kmerPositionInUnitig[start.first].second == unitigLength[numToPair(kmerPositionInUnitig[start.first].first).first] - 1);
 	assert(kmerPositionInUnitig[pos.first].second == 0 || kmerPositionInUnitig[pos.first].second == unitigLength[numToPair(kmerPositionInUnitig[pos.first].first).first] - 1);
-	unitigSequences[thisUnitig].resize(kmerBpOffsetInsideUnitig[thisUnitig].back()+kmerSize, '.');
+	unitigSequences[thisUnitig].resize(kmerBpOffsetInsideUnitig[thisUnitig].back()+kmerSize);
 }
 
 void UnitigStorage::addKmerSequence(std::pair<size_t, bool> kmer, const std::string& seq, size_t start, size_t end)
@@ -317,10 +317,26 @@ void UnitigStorage::addKmerSequence(std::pair<size_t, bool> kmer, const std::str
 	{
 		char c = seq[start+i];
 		assert(c == 'A' || c == 'C' || c == 'G' || c == 'T');
+		switch(c)
+		{
+			case 'A':
+				c = 0;
+				break;
+			case 'C':
+				c = 1;
+				break;
+			case 'G':
+				c = 2;
+				break;
+			case 'T':
+				c = 3;
+				break;
+		}
 		size_t bpIndex = kmerBpOffsetInsideUnitig[unitig.first][offset]+i;
 		if (revcomp)
 		{
 			bpIndex = kmerBpOffsetInsideUnitig[unitig.first][offset]+kmerSize-1-i;
+			c = 3-c;
 			switch(c)
 			{
 				case 'A':
@@ -337,8 +353,7 @@ void UnitigStorage::addKmerSequence(std::pair<size_t, bool> kmer, const std::str
 					break;
 			}
 		}
-		assert(unitigSequences[unitig.first][bpIndex] == '.' || unitigSequences[unitig.first][bpIndex] == c);
-		unitigSequences[unitig.first][bpIndex] = c;
+		unitigSequences[unitig.first].set(bpIndex, c);
 	}
 	kmerSequenceLoaded[kmer.first] = true;
 }
@@ -346,7 +361,7 @@ void UnitigStorage::addKmerSequence(std::pair<size_t, bool> kmer, const std::str
 void UnitigStorage::finalizeSequences()
 {
 	{
-		phmap::flat_hash_map<HashType, size_t> tmp;
+		phmap::flat_hash_map<HashType, uint32_t> tmp;
 		std::swap(tmp, hashToNode);
 	}
 	for (size_t i = 0; i < kmerSequenceLoaded.size(); i++)
@@ -366,12 +381,12 @@ void UnitigStorage::finalizeSequences()
 
 std::pair<size_t, bool> UnitigStorage::numToPair(size_t num) const
 {
-	return std::make_pair(num & 0x7FFFFFFFFFFFFFFFull, num >= 0x8000000000000000ull);
+	return std::make_pair(num / 2, num % 2);
 }
 
 size_t UnitigStorage::pairToNum(std::pair<size_t, bool> p) const
 {
-	return p.first + (p.second ? 0x8000000000000000ull : 0ull);
+	return p.first * 2 + (p.second ? 1 : 0);
 }
 
 size_t UnitigStorage::numHashes() const
@@ -385,3 +400,12 @@ size_t UnitigStorage::numUnitigs() const
 	return unitigSequences.size();
 }
 
+size_t UnitigStorage::totalBps() const
+{
+	size_t result = 0;
+	for (size_t i = 0; i < unitigSequences.size(); i++)
+	{
+		result += unitigSequences[i].size();
+	}
+	return result;
+}

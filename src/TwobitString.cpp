@@ -77,3 +77,14 @@ size_t TwobitString::size() const
 {
 	return realSize;
 }
+
+std::string TwobitString::substr(size_t start, size_t size) const
+{
+	std::string result;
+	result.reserve(size);
+	for (size_t i = 0; i < size; i++)
+	{
+		result.push_back("ACGT"[get(start+i)]);
+	}
+	return result;
+}

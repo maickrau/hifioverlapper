@@ -55,6 +55,7 @@ void UnitigKmerCorrector::build(const ReadpartIterator& partIterator)
 	std::cerr << reads.size() << " reads" << std::endl;
 	std::cerr << "finalize" << std::endl;
 	unitigs.finalizeSequences();
+	std::cerr << unitigs.totalBps() << " bp" << std::endl;
 }
 
 std::string UnitigKmerCorrector::getCorrected(size_t index) const

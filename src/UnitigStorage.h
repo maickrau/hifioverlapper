@@ -8,6 +8,7 @@
 #include <phmap.h>
 #include "MBGCommon.h"
 #include "VectorWithDirection.h"
+#include "TwobitString.h"
 
 class UnitigStorage
 {
@@ -23,20 +24,21 @@ public:
 	void finalizeSequences();
 	size_t numHashes() const;
 	size_t numUnitigs() const;
+	size_t totalBps() const;
 private:
 	void beginUnitig(std::pair<size_t, bool> start);
 	std::pair<size_t, bool> numToPair(size_t num) const;
 	size_t pairToNum(std::pair<size_t, bool> p) const;
 	size_t kmerSize;
-	phmap::flat_hash_map<HashType, size_t> hashToNode;
-	phmap::flat_hash_map<std::pair<size_t, size_t>, size_t> unitigEdgeOverlap;
-	phmap::flat_hash_map<std::pair<size_t, size_t>, size_t> kmerOverlap;
-	VectorWithDirection<size_t> uniqueEdge;
-	std::vector<std::pair<size_t, size_t>> kmerPositionInUnitig;
-	std::vector<std::vector<size_t>> kmerBpOffsetInsideUnitig;
-	std::vector<std::string> unitigSequences;
+	phmap::flat_hash_map<HashType, uint32_t> hashToNode;
+	phmap::flat_hash_map<std::pair<uint32_t, uint32_t>, uint16_t> unitigEdgeOverlap;
+	phmap::flat_hash_map<std::pair<uint32_t, uint32_t>, uint16_t> kmerOverlap;
+	VectorWithDirection<uint32_t> uniqueEdge;
+	std::vector<std::pair<uint32_t, uint32_t>> kmerPositionInUnitig;
+	std::vector<std::vector<uint32_t>> kmerBpOffsetInsideUnitig;
+	std::vector<TwobitString> unitigSequences;
 	std::vector<bool> kmerSequenceLoaded;
-	std::vector<size_t> unitigLength;
+	std::vector<uint32_t> unitigLength;
 	std::mutex addMutex;
 };
 
