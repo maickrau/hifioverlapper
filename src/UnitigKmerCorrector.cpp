@@ -58,7 +58,7 @@ void UnitigKmerCorrector::build(const ReadpartIterator& partIterator)
 	std::cerr << unitigs.totalBps() << " bp" << std::endl;
 }
 
-std::string UnitigKmerCorrector::getCorrected(size_t index) const
+std::string UnitigKmerCorrector::getRaw(size_t index) const
 {
 	std::string result;
 	result = reads[index].leftHanger + unitigs.getSequence(reads[index].unitigPath, reads[index].leftClip, reads[index].rightClip) + reads[index].rightHanger;

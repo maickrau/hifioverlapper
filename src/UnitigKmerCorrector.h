@@ -23,16 +23,16 @@ public:
 	UnitigKmerCorrector(size_t k);
 	void build(const ReadpartIterator& iterator);
 	template <typename F>
-	void iterateCorrectedSequences(F callback) const
+	void iterateRawSequences(F callback) const
 	{
 		for (size_t i = 0; i < reads.size(); i++)
 		{
-			std::string corrected = getCorrected(i);
+			std::string corrected = getRaw(i);
 			callback(i, reads[i].name, corrected);
 		}
 	}
 private:
-	std::string getCorrected(size_t index) const;
+	std::string getRaw(size_t index) const;
 	size_t kmerSize;
 	UnitigStorage unitigs;
 	std::vector<Read> reads;

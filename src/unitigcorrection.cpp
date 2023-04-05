@@ -17,7 +17,7 @@ int main(int argc, char** argv)
 	corrector.build(partIterator);
 	std::cerr << "correcting reads" << std::endl;
 	std::mutex writeMutex;
-	corrector.iterateCorrectedSequences([&writeMutex](size_t index, const std::string& readname, const std::string& readseq)
+	corrector.iterateRawSequences([&writeMutex](size_t index, const std::string& readname, const std::string& readseq)
 	{
 		std::lock_guard<std::mutex> lock { writeMutex };
 		std::cout << ">" << readname << std::endl;
