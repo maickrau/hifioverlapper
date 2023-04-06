@@ -37,7 +37,7 @@ public:
 	size_t numReads() const;
 	const std::string& getName(size_t index) const;
 private:
-	std::vector<std::pair<size_t, bool>> getUniqueReplacementPath(std::pair<size_t, bool> start, std::pair<size_t, bool> end, const phmap::flat_hash_set<size_t>& allowedNodes, const phmap::flat_hash_map<std::pair<size_t, bool>, phmap::flat_hash_set<std::pair<size_t, bool>>>& allowedEdges) const;
+	std::vector<std::pair<size_t, bool>> getUniqueReplacementPath(std::pair<size_t, bool> start, std::pair<size_t, bool> end, const phmap::flat_hash_set<size_t>& allowedNodes, const phmap::flat_hash_map<std::pair<size_t, bool>, phmap::flat_hash_set<std::pair<size_t, bool>>>& allowedEdges, size_t maxLength) const;
 	void getAnchorSpanners(phmap::flat_hash_map<std::pair<std::pair<size_t, bool>, std::pair<size_t, bool>>, std::map<std::vector<std::pair<size_t, bool>>, size_t>>& anchorSpannerCounts, const phmap::flat_hash_set<std::pair<std::pair<size_t, bool>, std::pair<size_t, bool>>>& adjacentAnchors, const phmap::flat_hash_set<std::pair<size_t, bool>>& isAnchor, size_t read) const;
 	size_t kmerSize;
 	UnitigStorage unitigs;

@@ -409,3 +409,12 @@ size_t UnitigStorage::totalBps() const
 	}
 	return result;
 }
+
+size_t UnitigStorage::unitigMinusEdgeLength(const std::pair<size_t, bool> fromUnitig, const std::pair<size_t, bool> toUnitig) const
+{
+	size_t result = unitigSequences[toUnitig.first].size();
+	auto c = canon(fromUnitig, toUnitig);
+	size_t overlap = unitigEdgeOverlap.at(std::make_pair(pairToNum(c.first), pairToNum(c.second)));
+	assert(overlap < result);
+	return result - overlap;
+}

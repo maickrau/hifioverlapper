@@ -68,7 +68,7 @@ public:
 	}
 };
 
-std::vector<std::pair<size_t, bool>> UnitigKmerCorrector::getUniqueReplacementPath(const std::pair<size_t, bool> start, const std::pair<size_t, bool> end, const phmap::flat_hash_set<size_t>& allowedNodes, const phmap::flat_hash_map<std::pair<size_t, bool>, phmap::flat_hash_set<std::pair<size_t, bool>>>& allowedEdges) const
+std::vector<std::pair<size_t, bool>> UnitigKmerCorrector::getUniqueReplacementPath(const std::pair<size_t, bool> start, const std::pair<size_t, bool> end, const phmap::flat_hash_set<size_t>& allowedNodes, const phmap::flat_hash_map<std::pair<size_t, bool>, phmap::flat_hash_set<std::pair<size_t, bool>>>& allowedEdges, size_t maxLength) const
 {
 	if (end == start) return std::vector<std::pair<size_t, bool>>{};
 	phmap::flat_hash_set<std::pair<size_t, bool>> bwVisited;
@@ -80,17 +80,16 @@ std::vector<std::pair<size_t, bool>> UnitigKmerCorrector::getUniqueReplacementPa
 		checkStack.pop();
 		size_t distance = topandlen.first;
 		std::pair<size_t, bool> top = topandlen.second;
-		// if (distance > maxLength) continue;
+		if (distance > maxLength) continue;
 		if (bwVisited.count(top) == 1) continue;
 		bwVisited.insert(top);
 		if (bwVisited.size() > 1000) return std::vector<std::pair<size_t, bool>>{};
-		if (allowedEdges.count(top) == 0) return std::vector<std::pair<size_t, bool>>{};
+		if (allowedEdges.count(top) == 0) continue;
 		for (auto edge : allowedEdges.at(top))
 		{
 			if (edge == start) return std::vector<std::pair<size_t, bool>>{};
 			if (allowedNodes.count(edge.first) == 0) continue;
-			// size_t extra = kmerSize - reads.getOverlap(top, edge);
-			size_t extra = 1;
+			size_t extra = unitigs.unitigMinusEdgeLength(top, edge);
 			checkStack.emplace(distance + extra, edge);
 		}
 	}
@@ -189,7 +188,12 @@ std::pair<std::string, bool> UnitigKmerCorrector::getCorrectedSequence(size_t re
 			lastMatch = i;
 			continue;
 		}
-		std::vector<std::pair<size_t, bool>> uniqueReplacement = getUniqueReplacementPath(reads[readIndex].unitigPath[lastMatch], reads[readIndex].unitigPath[i], ambiguousNode, ambiguousEdges);
+		size_t maxLength = 0;
+		for (size_t j = lastMatch+1; j <= i; j++)
+		{
+			maxLength += unitigs.unitigMinusEdgeLength(reads[readIndex].unitigPath[j-1], reads[readIndex].unitigPath[j]);
+		}
+		std::vector<std::pair<size_t, bool>> uniqueReplacement = getUniqueReplacementPath(reads[readIndex].unitigPath[lastMatch], reads[readIndex].unitigPath[i], ambiguousNode, ambiguousEdges, maxLength+500);
 		if (uniqueReplacement.size() == 0)
 		{
 			correctedLocalPath.insert(correctedLocalPath.end(), reads[readIndex].unitigPath.begin()+lastMatch+1, reads[readIndex].unitigPath.begin()+i+1);
@@ -197,13 +201,13 @@ std::pair<std::string, bool> UnitigKmerCorrector::getCorrectedSequence(size_t re
 			continue;
 		}
 		bool allSafe = true;
-		for (size_t i = 0; i < uniqueReplacement.size(); i++)
+		for (size_t j = 0; j < uniqueReplacement.size(); j++)
 		{
-			if (safeNode.count(uniqueReplacement[i].first) == 0) allSafe = false;
+			if (safeNode.count(uniqueReplacement[j].first) == 0) allSafe = false;
 		}
-		for (size_t i = 1; i < uniqueReplacement.size(); i++)
+		for (size_t j = 1; j < uniqueReplacement.size(); j++)
 		{
-			if (safeEdges[uniqueReplacement[i-1]].count(uniqueReplacement[i]) == 0) allSafe = false;
+			if (safeEdges[uniqueReplacement[j-1]].count(uniqueReplacement[j]) == 0) allSafe = false;
 		}
 		if (!allSafe)
 		{
