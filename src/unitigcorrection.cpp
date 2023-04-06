@@ -40,12 +40,14 @@ void iterateCorrectedReads(const UnitigKmerCorrector& corrector, const MatchInde
 				}
 				if (got->second.size() <= 5)
 				{
-					callback(got->first, corrector.getName(got->first), corrector.getRawSequence(got->first));
+					callback(got->first, corrector.getName(got->first), corrector.getRawSequence(got->first), false);
 					continue;
 				}
 				got->second.push_back(got->first);
-				std::string corrected = corrector.getCorrectedSequence(got->first, got->second, minAmbiguousCoverage, minSafeCoverage);
-				callback(got->first, corrector.getName(got->first), corrected);
+				std::string corrected;
+				bool changed;
+				std::tie(corrected, changed) = corrector.getCorrectedSequence(got->first, got->second, minAmbiguousCoverage, minSafeCoverage);
+				callback(got->first, corrector.getName(got->first), corrected, changed);
 			}
 		});
 	}
@@ -76,7 +78,7 @@ void iterateCorrectedReads(const UnitigKmerCorrector& corrector, const MatchInde
 	for (size_t i = 0; i < processed.size(); i++)
 	{
 		if (processed[i]) continue;
-		callback(i, corrector.getName(i), corrector.getRawSequence(i));
+		callback(i, corrector.getName(i), corrector.getRawSequence(i), false);
 	}
 }
 
@@ -113,10 +115,22 @@ int main(int argc, char** argv)
 	MatchIndex matchIndex = buildMatchIndex(corrector, searchk, numWindows, searchwindowSize);
 	std::cerr << "correcting reads" << std::endl;
 	std::mutex writeMutex;
-	iterateCorrectedReads(corrector, matchIndex, numThreads, minAmbiguousCoverage, minSafeCoverage, [&writeMutex](size_t index, const std::string& readname, const std::string& readseq)
+	size_t numCorrected = 0;
+	size_t numNotCorrected = 0;
+	iterateCorrectedReads(corrector, matchIndex, numThreads, minAmbiguousCoverage, minSafeCoverage, [&writeMutex, &numCorrected, &numNotCorrected](size_t index, const std::string& readname, const std::string& readseq, bool corrected)
 	{
 		std::lock_guard<std::mutex> lock { writeMutex };
 		std::cout << ">" << readname << std::endl;
 		std::cout << readseq << std::endl;
+		if (corrected)
+		{
+			numCorrected += 1;
+		}
+		else
+		{
+			numNotCorrected += 1;
+		}
 	});
+	std::cerr << numCorrected << " reads corrected" << std::endl;
+	std::cerr << numNotCorrected << " reads not corrected" << std::endl;
 }

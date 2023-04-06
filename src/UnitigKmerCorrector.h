@@ -32,7 +32,7 @@ public:
 			callback(i, reads[i].name, corrected);
 		}
 	}
-	std::string getCorrectedSequence(size_t readIndex, const std::vector<size_t>& context, size_t minAmbiguousCoverage, size_t minSafeCoverage) const;
+	std::pair<std::string, bool> getCorrectedSequence(size_t readIndex, const std::vector<size_t>& context, size_t minAmbiguousCoverage, size_t minSafeCoverage) const;
 	std::string getRawSequence(size_t index) const;
 	size_t numReads() const;
 	const std::string& getName(size_t index) const;

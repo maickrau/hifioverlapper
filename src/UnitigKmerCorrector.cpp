@@ -124,9 +124,9 @@ std::vector<std::pair<size_t, bool>> UnitigKmerCorrector::getUniqueReplacementPa
 	return result;
 }
 
-std::string UnitigKmerCorrector::getCorrectedSequence(size_t readIndex, const std::vector<size_t>& context, size_t minAmbiguousCoverage, size_t minSafeCoverage) const
+std::pair<std::string, bool> UnitigKmerCorrector::getCorrectedSequence(size_t readIndex, const std::vector<size_t>& context, size_t minAmbiguousCoverage, size_t minSafeCoverage) const
 {
-	if (reads[readIndex].unitigPath.size() == 1) return getRawSequence(readIndex);
+	if (reads[readIndex].unitigPath.size() == 1) return std::make_pair(getRawSequence(readIndex), false);
 	phmap::flat_hash_map<size_t, size_t> unitigCoverage;
 	phmap::flat_hash_map<std::pair<std::pair<size_t, bool>, std::pair<size_t, bool>>, size_t> edgeCoverage;
 	phmap::flat_hash_set<size_t> hasFwCoverage;
@@ -216,12 +216,24 @@ std::string UnitigKmerCorrector::getCorrectedSequence(size_t readIndex, const st
 		correctedLocalPath.insert(correctedLocalPath.end(), uniqueReplacement.begin()+1, uniqueReplacement.end());
 		lastMatch = i;
 	}
+	bool changed = false;
+	if (correctedLocalPath.size() != reads[readIndex].unitigPath.size())
+	{
+		changed = true;
+	}
+	else
+	{
+		for (size_t i = 0; i < correctedLocalPath.size(); i++)
+		{
+			if (correctedLocalPath[i] != reads[readIndex].unitigPath[i]) changed = true;
+		}
+	}
 	correctedLocalPath.insert(correctedLocalPath.end(), reads[readIndex].unitigPath.begin()+lastMatch+1, reads[readIndex].unitigPath.end());
 	assert(correctedLocalPath.size() >= 2);
 	assert(correctedLocalPath[0] == reads[readIndex].unitigPath[0]);
 	assert(correctedLocalPath.back() == reads[readIndex].unitigPath.back());
 	std::string result = reads[readIndex].leftHanger + unitigs.getSequence(correctedLocalPath, reads[readIndex].leftClip, reads[readIndex].rightClip) + reads[readIndex].rightHanger;
-	return result;
+	return std::make_pair(result, changed);
 }
 
 std::string UnitigKmerCorrector::getRawSequence(size_t index) const
