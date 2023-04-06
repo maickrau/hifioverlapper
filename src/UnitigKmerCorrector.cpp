@@ -68,9 +68,11 @@ public:
 	}
 };
 
-std::vector<std::pair<size_t, bool>> UnitigKmerCorrector::getUniqueReplacementPath(const std::pair<size_t, bool> start, const std::pair<size_t, bool> end, const phmap::flat_hash_set<size_t>& allowedNodes, const phmap::flat_hash_map<std::pair<size_t, bool>, phmap::flat_hash_set<std::pair<size_t, bool>>>& allowedEdges, size_t maxLength) const
+std::vector<std::pair<size_t, bool>> UnitigKmerCorrector::getUniqueReplacementPath(const std::pair<size_t, bool> start, const std::pair<size_t, bool> end, const std::vector<bool>& allowedNodes, const VectorWithDirection<std::vector<std::pair<size_t, bool>>>& allowedEdges, const std::vector<size_t>& localToUnitig, size_t maxLength) const
 {
 	if (end == start) return std::vector<std::pair<size_t, bool>>{};
+	assert(end.first < allowedEdges.size());
+	assert(start.first < allowedEdges.size());
 	phmap::flat_hash_set<std::pair<size_t, bool>> bwVisited;
 	std::priority_queue<std::pair<size_t, std::pair<size_t, bool>>, std::vector<std::pair<size_t, std::pair<size_t, bool>>>, DistantKmerComparer> checkStack;
 	checkStack.emplace(0, reverse(end));
@@ -84,12 +86,13 @@ std::vector<std::pair<size_t, bool>> UnitigKmerCorrector::getUniqueReplacementPa
 		if (bwVisited.count(top) == 1) continue;
 		bwVisited.insert(top);
 		if (bwVisited.size() > 1000) return std::vector<std::pair<size_t, bool>>{};
-		if (allowedEdges.count(top) == 0) continue;
-		for (auto edge : allowedEdges.at(top))
+		for (auto edge : allowedEdges[top])
 		{
 			if (edge == start) return std::vector<std::pair<size_t, bool>>{};
-			if (allowedNodes.count(edge.first) == 0) continue;
-			size_t extra = unitigs.unitigMinusEdgeLength(top, edge);
+			if (!allowedNodes[edge.first]) continue;
+			std::pair<size_t, bool> fromglobal { localToUnitig[top.first], top.second };
+			std::pair<size_t, bool> toglobal { localToUnitig[edge.first], edge.second };
+			size_t extra = unitigs.unitigMinusEdgeLength(fromglobal, toglobal);
 			checkStack.emplace(distance + extra, edge);
 		}
 	}
@@ -99,8 +102,8 @@ std::vector<std::pair<size_t, bool>> UnitigKmerCorrector::getUniqueReplacementPa
 	while (result.back() != end)
 	{
 		std::pair<size_t, bool> uniqueOption { std::numeric_limits<size_t>::max(), false };
-		if (allowedEdges.count(result.back()) == 0) return std::vector<std::pair<size_t, bool>>{};
-		for (auto edge : allowedEdges.at(result.back()))
+		if (allowedEdges[result.back()].size() == 0) return std::vector<std::pair<size_t, bool>>{};
+		for (auto edge : allowedEdges[result.back()])
 		{
 			if (bwVisited.count(reverse(edge)) == 0) continue;
 			if (uniqueOption.first == std::numeric_limits<size_t>::max())
@@ -126,66 +129,81 @@ std::vector<std::pair<size_t, bool>> UnitigKmerCorrector::getUniqueReplacementPa
 std::pair<std::string, bool> UnitigKmerCorrector::getCorrectedSequence(size_t readIndex, const std::vector<size_t>& context, size_t minAmbiguousCoverage, size_t minSafeCoverage) const
 {
 	if (reads[readIndex].unitigPath.size() == 1) return std::make_pair(getRawSequence(readIndex), false);
-	phmap::flat_hash_map<size_t, size_t> unitigCoverage;
-	phmap::flat_hash_map<std::pair<std::pair<size_t, bool>, std::pair<size_t, bool>>, size_t> edgeCoverage;
-	phmap::flat_hash_set<size_t> hasFwCoverage;
-	phmap::flat_hash_set<size_t> hasBwCoverage;
+	phmap::flat_hash_map<size_t, size_t> unitigToLocal;
+	std::vector<size_t> localToUnitig;
+	std::vector<size_t> localCoverage;
+	phmap::flat_hash_map<std::pair<std::pair<size_t, bool>, std::pair<size_t, bool>>, size_t> localEdgeCoverage;
+	std::vector<bool> hasFwCoverage;
+	std::vector<bool> hasBwCoverage;
 	for (size_t read : context)
 	{
-		for (size_t i = 0; i < reads[read].unitigPath.size(); i++)
+		std::pair<size_t, bool> lastLocal { std::numeric_limits<size_t>::max(), false };
+		for (auto node : reads[read].unitigPath)
 		{
-			unitigCoverage[reads[read].unitigPath[i].first] += 1;
-			if (reads[read].unitigPath[i].second)
+			if (unitigToLocal.count(node.first) == 0)
 			{
-				hasFwCoverage.insert(reads[read].unitigPath[i].first);
+				unitigToLocal[node.first] = localCoverage.size();
+				localToUnitig.push_back(node.first);
+				localCoverage.push_back(0);
+				hasFwCoverage.push_back(false);
+				hasBwCoverage.push_back(false);
+			}
+			std::pair<size_t, bool> thislocal { unitigToLocal.at(node.first), node.second };
+			localCoverage[thislocal.first] += 1;
+			if (thislocal.second)
+			{
+				hasFwCoverage[thislocal.first] = true;
 			}
 			else
 			{
-				hasBwCoverage.insert(reads[read].unitigPath[i].first);
+				hasBwCoverage[thislocal.first] = true;
 			}
-		}
-		for (size_t i = 1; i < reads[read].unitigPath.size(); i++)
-		{
-			edgeCoverage[canon(reads[read].unitigPath[i-1], reads[read].unitigPath[i])] += 1;
+			if (lastLocal.first != std::numeric_limits<size_t>::max()) localEdgeCoverage[canon(lastLocal, thislocal)] += 1;
+			lastLocal = thislocal;
 		}
 	}
-	phmap::flat_hash_set<size_t> safeNode;
-	phmap::flat_hash_set<size_t> ambiguousNode;
-	phmap::flat_hash_map<std::pair<size_t, bool>, phmap::flat_hash_set<std::pair<size_t, bool>>> safeEdges;
-	phmap::flat_hash_map<std::pair<size_t, bool>, phmap::flat_hash_set<std::pair<size_t, bool>>> ambiguousEdges;
-	for (auto pair : unitigCoverage)
+	std::vector<bool> safeNode;
+	std::vector<bool> ambiguousNode;
+	VectorWithDirection<std::vector<std::pair<size_t, bool>>> safeEdges;
+	VectorWithDirection<std::vector<std::pair<size_t, bool>>> ambiguousEdges;
+	safeNode.resize(localCoverage.size(), false);
+	ambiguousNode.resize(localCoverage.size(), false);
+	safeEdges.resize(localCoverage.size());
+	ambiguousEdges.resize(localCoverage.size());
+	for (size_t i = 0; i < localCoverage.size(); i++)
 	{
-		if (hasFwCoverage.count(pair.first) == 0) continue;
-		if (hasBwCoverage.count(pair.first) == 0) continue;
-		if (pair.second >= minSafeCoverage) safeNode.insert(pair.first);
-		if (pair.second >= minAmbiguousCoverage) ambiguousNode.insert(pair.first);
+		if (!hasFwCoverage[i]) continue;
+		if (!hasBwCoverage[i]) continue;
+		if (localCoverage[i] >= minSafeCoverage) safeNode[i] = true;
+		if (localCoverage[i] >= minAmbiguousCoverage) ambiguousNode[i] = true;
 	}
-	for (auto pair : edgeCoverage)
+	for (auto pair : localEdgeCoverage)
 	{
-		if (hasFwCoverage.count(pair.first.first.first) == 0) continue;
-		if (hasBwCoverage.count(pair.first.first.first) == 0) continue;
-		if (hasFwCoverage.count(pair.first.second.first) == 0) continue;
-		if (hasBwCoverage.count(pair.first.second.first) == 0) continue;
+		if (!ambiguousNode[pair.first.first.first]) continue;
+		if (!ambiguousNode[pair.first.second.first]) continue;
 		if (pair.second >= minSafeCoverage)
 		{
-			safeEdges[pair.first.first].emplace(pair.first.second);
-			safeEdges[reverse(pair.first.second)].emplace(reverse(pair.first.first));
+			safeEdges[pair.first.first].emplace_back(pair.first.second);
+			safeEdges[reverse(pair.first.second)].emplace_back(reverse(pair.first.first));
 		}
 		if (pair.second >= minAmbiguousCoverage)
 		{
-			ambiguousEdges[pair.first.first].emplace(pair.first.second);
-			ambiguousEdges[reverse(pair.first.second)].emplace(reverse(pair.first.first));
+			ambiguousEdges[pair.first.first].emplace_back(pair.first.second);
+			ambiguousEdges[reverse(pair.first.second)].emplace_back(reverse(pair.first.first));
 		}
 	}
 	std::vector<std::pair<size_t, bool>> correctedLocalPath;
+	std::pair<size_t, bool> lastLocal { std::numeric_limits<size_t>::max(), false };
 	size_t lastMatch = std::numeric_limits<size_t>::max();
 	for (size_t i = 0; i < reads[readIndex].unitigPath.size(); i++)
 	{
-		if (safeNode.count(reads[readIndex].unitigPath[i].first) == 0) continue;
+		std::pair<size_t, bool> thisLocal { unitigToLocal.at(reads[readIndex].unitigPath[i].first), reads[readIndex].unitigPath[i].second };
+		if (!safeNode[thisLocal.first]) continue;
 		if (lastMatch == std::numeric_limits<size_t>::max())
 		{
 			correctedLocalPath.insert(correctedLocalPath.end(), reads[readIndex].unitigPath.begin(), reads[readIndex].unitigPath.begin()+i+1);
 			lastMatch = i;
+			lastLocal = thisLocal;
 			continue;
 		}
 		size_t maxLength = 0;
@@ -193,33 +211,57 @@ std::pair<std::string, bool> UnitigKmerCorrector::getCorrectedSequence(size_t re
 		{
 			maxLength += unitigs.unitigMinusEdgeLength(reads[readIndex].unitigPath[j-1], reads[readIndex].unitigPath[j]);
 		}
-		std::vector<std::pair<size_t, bool>> uniqueReplacement = getUniqueReplacementPath(reads[readIndex].unitigPath[lastMatch], reads[readIndex].unitigPath[i], ambiguousNode, ambiguousEdges, maxLength+500);
+		std::vector<std::pair<size_t, bool>> uniqueReplacement = getUniqueReplacementPath(lastLocal, thisLocal, ambiguousNode, ambiguousEdges, localToUnitig, maxLength+500);
 		if (uniqueReplacement.size() == 0)
 		{
 			correctedLocalPath.insert(correctedLocalPath.end(), reads[readIndex].unitigPath.begin()+lastMatch+1, reads[readIndex].unitigPath.begin()+i+1);
 			lastMatch = i;
+			lastLocal = thisLocal;
 			continue;
 		}
 		bool allSafe = true;
 		for (size_t j = 0; j < uniqueReplacement.size(); j++)
 		{
-			if (safeNode.count(uniqueReplacement[j].first) == 0) allSafe = false;
+			if (!safeNode[uniqueReplacement[j].first]) allSafe = false;
 		}
-		for (size_t j = 1; j < uniqueReplacement.size(); j++)
+		if (allSafe)
 		{
-			if (safeEdges[uniqueReplacement[j-1]].count(uniqueReplacement[j]) == 0) allSafe = false;
+			for (size_t j = 1; j < uniqueReplacement.size(); j++)
+			{
+				bool found = false;
+				for (auto edge : safeEdges[uniqueReplacement[j-1]])
+				{
+					if (edge == uniqueReplacement[j])
+					{
+						found = true;
+						break;
+					}
+				}
+				if (!found)
+				{
+					allSafe = false;
+					break;
+				}
+			}
 		}
 		if (!allSafe)
 		{
 			correctedLocalPath.insert(correctedLocalPath.end(), reads[readIndex].unitigPath.begin()+lastMatch+1, reads[readIndex].unitigPath.begin()+i+1);
 			lastMatch = i;
+			lastLocal = thisLocal;
 			continue;
+		}
+		for (size_t j = 0; j < uniqueReplacement.size(); j++)
+		{
+			uniqueReplacement[j].first = localToUnitig[uniqueReplacement[j].first];
 		}
 		assert(uniqueReplacement[0] == reads[readIndex].unitigPath[lastMatch]);
 		assert(uniqueReplacement.back() == reads[readIndex].unitigPath[i]);
 		correctedLocalPath.insert(correctedLocalPath.end(), uniqueReplacement.begin()+1, uniqueReplacement.end());
 		lastMatch = i;
+		lastLocal = thisLocal;
 	}
+	correctedLocalPath.insert(correctedLocalPath.end(), reads[readIndex].unitigPath.begin()+lastMatch+1, reads[readIndex].unitigPath.end());
 	bool changed = false;
 	if (correctedLocalPath.size() != reads[readIndex].unitigPath.size())
 	{
@@ -232,7 +274,6 @@ std::pair<std::string, bool> UnitigKmerCorrector::getCorrectedSequence(size_t re
 			if (correctedLocalPath[i] != reads[readIndex].unitigPath[i]) changed = true;
 		}
 	}
-	correctedLocalPath.insert(correctedLocalPath.end(), reads[readIndex].unitigPath.begin()+lastMatch+1, reads[readIndex].unitigPath.end());
 	assert(correctedLocalPath.size() >= 2);
 	assert(correctedLocalPath[0] == reads[readIndex].unitigPath[0]);
 	assert(correctedLocalPath.back() == reads[readIndex].unitigPath.back());
