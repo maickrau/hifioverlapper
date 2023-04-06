@@ -1,3 +1,4 @@
+#include <queue>
 #include <cassert>
 #include <mutex>
 #include "UnitigKmerCorrector.h"
@@ -58,98 +59,164 @@ void UnitigKmerCorrector::build(const ReadpartIterator& partIterator)
 	std::cerr << unitigs.totalBps() << " bp" << std::endl;
 }
 
-void UnitigKmerCorrector::getAnchorSpanners(phmap::flat_hash_map<std::pair<std::pair<size_t, bool>, std::pair<size_t, bool>>, std::map<std::vector<std::pair<size_t, bool>>, size_t>>& anchorSpannerCounts, const phmap::flat_hash_set<std::pair<std::pair<size_t, bool>, std::pair<size_t, bool>>>& adjacentAnchors, const phmap::flat_hash_set<std::pair<size_t, bool>>& isAnchor, size_t read) const
+class DistantKmerComparer
 {
-	size_t lastAnchor = std::numeric_limits<size_t>::max();
-	for (size_t i = 0; i < reads[read].unitigPath.size(); i++)
+public:
+	bool operator()(const std::pair<size_t, std::pair<size_t, bool>> left, const std::pair<size_t, std::pair<size_t, bool>> right) const
 	{
-		if (isAnchor.count(reads[read].unitigPath[i]) == 0) continue;
-		if (lastAnchor == std::numeric_limits<size_t>::max())
+		return left.first > right.first;
+	}
+};
+
+std::vector<std::pair<size_t, bool>> UnitigKmerCorrector::getUniqueReplacementPath(const std::pair<size_t, bool> start, const std::pair<size_t, bool> end, const phmap::flat_hash_set<size_t>& allowedNodes, const phmap::flat_hash_map<std::pair<size_t, bool>, phmap::flat_hash_set<std::pair<size_t, bool>>>& allowedEdges) const
+{
+	if (end == start) return std::vector<std::pair<size_t, bool>>{};
+	phmap::flat_hash_set<std::pair<size_t, bool>> bwVisited;
+	std::priority_queue<std::pair<size_t, std::pair<size_t, bool>>, std::vector<std::pair<size_t, std::pair<size_t, bool>>>, DistantKmerComparer> checkStack;
+	checkStack.emplace(0, reverse(end));
+	while (checkStack.size() > 0)
+	{
+		auto topandlen = checkStack.top();
+		checkStack.pop();
+		size_t distance = topandlen.first;
+		std::pair<size_t, bool> top = topandlen.second;
+		// if (distance > maxLength) continue;
+		if (bwVisited.count(top) == 1) continue;
+		bwVisited.insert(top);
+		if (bwVisited.size() > 1000) return std::vector<std::pair<size_t, bool>>{};
+		if (allowedEdges.count(top) == 0) return std::vector<std::pair<size_t, bool>>{};
+		for (auto edge : allowedEdges.at(top))
 		{
-			lastAnchor = i;
-			continue;
-		}
-		std::pair<size_t, bool> oldAnchor = reads[read].unitigPath[lastAnchor];
-		std::pair<size_t, bool> thisAnchor = reads[read].unitigPath[i];
-		if (adjacentAnchors.count(std::make_pair(oldAnchor, thisAnchor)) == 1)
-		{
-			std::vector<std::pair<size_t, bool>> subpath { reads[read].unitigPath.begin()+lastAnchor+1, reads[read].unitigPath.begin()+i };
-			anchorSpannerCounts[std::make_pair(oldAnchor, thisAnchor)][subpath] += 1;
-		}
-		if (adjacentAnchors.count(std::make_pair(reverse(thisAnchor), reverse(oldAnchor))) == 1)
-		{
-			std::vector<std::pair<size_t, bool>> subpath { reads[read].unitigPath.begin()+lastAnchor+1, reads[read].unitigPath.begin()+i };
-			std::reverse(subpath.begin(), subpath.end());
-			for (size_t j = 0; j < subpath.size(); j++)
-			{
-				subpath[j] = reverse(subpath[j]);
-			}
-			anchorSpannerCounts[std::make_pair(reverse(thisAnchor), reverse(oldAnchor))][subpath] += 1;
+			if (edge == start) return std::vector<std::pair<size_t, bool>>{};
+			if (allowedNodes.count(edge.first) == 0) continue;
+			// size_t extra = kmerSize - reads.getOverlap(top, edge);
+			size_t extra = 1;
+			checkStack.emplace(distance + extra, edge);
 		}
 	}
+	std::vector<std::pair<size_t, bool>> result;
+	result.push_back(start);
+	phmap::flat_hash_set<std::pair<size_t, bool>> visited;
+	while (result.back() != end)
+	{
+		std::pair<size_t, bool> uniqueOption { std::numeric_limits<size_t>::max(), false };
+		if (allowedEdges.count(result.back()) == 0) return std::vector<std::pair<size_t, bool>>{};
+		for (auto edge : allowedEdges.at(result.back()))
+		{
+			if (bwVisited.count(reverse(edge)) == 0) continue;
+			if (uniqueOption.first == std::numeric_limits<size_t>::max())
+			{
+				uniqueOption = edge;
+			}
+			else
+			{
+				return std::vector<std::pair<size_t, bool>>{};
+			}
+		}
+		if (uniqueOption.first == std::numeric_limits<size_t>::max()) return std::vector<std::pair<size_t, bool>>{};
+		assert(visited.count(uniqueOption) == 0);
+		result.push_back(uniqueOption);
+		visited.insert(uniqueOption);
+	}
+	assert(result.size() > 1);
+	assert(result[0] == start);
+	assert(result.back() == end);
+	return result;
 }
 
 std::string UnitigKmerCorrector::getCorrectedSequence(size_t readIndex, const std::vector<size_t>& context, size_t minAmbiguousCoverage, size_t minSafeCoverage) const
 {
 	if (reads[readIndex].unitigPath.size() == 1) return getRawSequence(readIndex);
-	phmap::flat_hash_map<size_t, size_t> keyReadUnitigCoverage;
 	phmap::flat_hash_map<size_t, size_t> unitigCoverage;
+	phmap::flat_hash_map<std::pair<std::pair<size_t, bool>, std::pair<size_t, bool>>, size_t> edgeCoverage;
+	phmap::flat_hash_set<size_t> hasFwCoverage;
+	phmap::flat_hash_set<size_t> hasBwCoverage;
 	for (size_t read : context)
 	{
-		for (const auto& node : reads[read].unitigPath)
+		for (size_t i = 0; i < reads[read].unitigPath.size(); i++)
 		{
-			unitigCoverage[node.first] += 1;
+			unitigCoverage[reads[read].unitigPath[i].first] += 1;
+			if (reads[read].unitigPath[i].second)
+			{
+				hasFwCoverage.insert(reads[read].unitigPath[i].first);
+			}
+			else
+			{
+				hasBwCoverage.insert(reads[read].unitigPath[i].first);
+			}
+		}
+		for (size_t i = 1; i < reads[read].unitigPath.size(); i++)
+		{
+			edgeCoverage[canon(reads[read].unitigPath[i-1], reads[read].unitigPath[i])] += 1;
 		}
 	}
-	for (const auto& node : reads[readIndex].unitigPath)
+	phmap::flat_hash_set<size_t> safeNode;
+	phmap::flat_hash_set<size_t> ambiguousNode;
+	phmap::flat_hash_map<std::pair<size_t, bool>, phmap::flat_hash_set<std::pair<size_t, bool>>> safeEdges;
+	phmap::flat_hash_map<std::pair<size_t, bool>, phmap::flat_hash_set<std::pair<size_t, bool>>> ambiguousEdges;
+	for (auto pair : unitigCoverage)
 	{
-		keyReadUnitigCoverage[node.first] += 1;
+		if (hasFwCoverage.count(pair.first) == 0) continue;
+		if (hasBwCoverage.count(pair.first) == 0) continue;
+		if (pair.second >= minSafeCoverage) safeNode.insert(pair.first);
+		if (pair.second >= minAmbiguousCoverage) ambiguousNode.insert(pair.first);
 	}
-	std::vector<size_t> anchorIndices;
-	phmap::flat_hash_set<std::pair<size_t, bool>> isAnchor;
-	for (size_t i = 0; i < reads[readIndex].unitigPath.size(); i++)
+	for (auto pair : edgeCoverage)
 	{
-		if (unitigCoverage[reads[readIndex].unitigPath[i].first] < minSafeCoverage) continue;
-		anchorIndices.push_back(i);
-		isAnchor.insert(reads[readIndex].unitigPath[i]);
-	}
-	if (anchorIndices.size() < 2) return getRawSequence(readIndex);
-	phmap::flat_hash_set<std::pair<std::pair<size_t, bool>, std::pair<size_t, bool>>> adjacentAnchors;
-	for (size_t i = 1; i < anchorIndices.size(); i++)
-	{
-		adjacentAnchors.emplace(reads[readIndex].unitigPath[anchorIndices[i-1]], reads[readIndex].unitigPath[anchorIndices[i]]);
-	}
-	phmap::flat_hash_map<std::pair<std::pair<size_t, bool>, std::pair<size_t, bool>>, std::map<std::vector<std::pair<size_t, bool>>, size_t>> anchorSpannerCounts;
-	for (size_t read : context)
-	{
-		getAnchorSpanners(anchorSpannerCounts, adjacentAnchors, isAnchor, read);
+		if (hasFwCoverage.count(pair.first.first.first) == 0) continue;
+		if (hasBwCoverage.count(pair.first.first.first) == 0) continue;
+		if (hasFwCoverage.count(pair.first.second.first) == 0) continue;
+		if (hasBwCoverage.count(pair.first.second.first) == 0) continue;
+		if (pair.second >= minSafeCoverage)
+		{
+			safeEdges[pair.first.first].emplace(pair.first.second);
+			safeEdges[reverse(pair.first.second)].emplace(reverse(pair.first.first));
+		}
+		if (pair.second >= minAmbiguousCoverage)
+		{
+			ambiguousEdges[pair.first.first].emplace(pair.first.second);
+			ambiguousEdges[reverse(pair.first.second)].emplace(reverse(pair.first.first));
+		}
 	}
 	std::vector<std::pair<size_t, bool>> correctedLocalPath;
-	correctedLocalPath.insert(correctedLocalPath.end(), reads[readIndex].unitigPath.begin(), reads[readIndex].unitigPath.begin() + anchorIndices[0]+1);
-	for (size_t i = 1; i < anchorIndices.size(); i++)
+	size_t lastMatch = std::numeric_limits<size_t>::max();
+	for (size_t i = 0; i < reads[readIndex].unitigPath.size(); i++)
 	{
-		size_t safeCount = 0;
-		size_t ambiguousCount = 0;
-		for (const auto& pair : anchorSpannerCounts[std::make_pair(reads[readIndex].unitigPath[anchorIndices[i-1]], reads[readIndex].unitigPath[anchorIndices[i]])])
+		if (safeNode.count(reads[readIndex].unitigPath[i].first) == 0) continue;
+		if (lastMatch == std::numeric_limits<size_t>::max())
 		{
-			if (pair.second >= minAmbiguousCoverage) ambiguousCount += 1;
-			if (pair.second >= minSafeCoverage) safeCount += 1;
-		}
-		if (ambiguousCount != 1 || safeCount != 1)
-		{
-			correctedLocalPath.insert(correctedLocalPath.end(), reads[readIndex].unitigPath.begin()+anchorIndices[i-1]+1, reads[readIndex].unitigPath.begin()+anchorIndices[i]+1);
+			correctedLocalPath.insert(correctedLocalPath.end(), reads[readIndex].unitigPath.begin(), reads[readIndex].unitigPath.begin()+i+1);
+			lastMatch = i;
 			continue;
 		}
-		assert(safeCount == 1);
-		assert(ambiguousCount == 1);
-		for (const auto& pair : anchorSpannerCounts[std::make_pair(reads[readIndex].unitigPath[anchorIndices[i-1]], reads[readIndex].unitigPath[anchorIndices[i]])])
+		std::vector<std::pair<size_t, bool>> uniqueReplacement = getUniqueReplacementPath(reads[readIndex].unitigPath[lastMatch], reads[readIndex].unitigPath[i], ambiguousNode, ambiguousEdges);
+		if (uniqueReplacement.size() == 0)
 		{
-			if (pair.second < minSafeCoverage) continue;
-			correctedLocalPath.insert(correctedLocalPath.end(), pair.first.begin(), pair.first.end());
+			correctedLocalPath.insert(correctedLocalPath.end(), reads[readIndex].unitigPath.begin()+lastMatch+1, reads[readIndex].unitigPath.begin()+i+1);
+			lastMatch = i;
+			continue;
 		}
-		correctedLocalPath.emplace_back(reads[readIndex].unitigPath[anchorIndices[i]]);
+		bool allSafe = true;
+		for (size_t i = 0; i < uniqueReplacement.size(); i++)
+		{
+			if (safeNode.count(uniqueReplacement[i].first) == 0) allSafe = false;
+		}
+		for (size_t i = 1; i < uniqueReplacement.size(); i++)
+		{
+			if (safeEdges[uniqueReplacement[i-1]].count(uniqueReplacement[i]) == 0) allSafe = false;
+		}
+		if (!allSafe)
+		{
+			correctedLocalPath.insert(correctedLocalPath.end(), reads[readIndex].unitigPath.begin()+lastMatch+1, reads[readIndex].unitigPath.begin()+i+1);
+			lastMatch = i;
+			continue;
+		}
+		assert(uniqueReplacement[0] == reads[readIndex].unitigPath[lastMatch]);
+		assert(uniqueReplacement.back() == reads[readIndex].unitigPath[i]);
+		correctedLocalPath.insert(correctedLocalPath.end(), uniqueReplacement.begin()+1, uniqueReplacement.end());
+		lastMatch = i;
 	}
-	correctedLocalPath.insert(correctedLocalPath.end(), reads[readIndex].unitigPath.begin()+anchorIndices.back()+1, reads[readIndex].unitigPath.end());
+	correctedLocalPath.insert(correctedLocalPath.end(), reads[readIndex].unitigPath.begin()+lastMatch+1, reads[readIndex].unitigPath.end());
 	assert(correctedLocalPath.size() >= 2);
 	assert(correctedLocalPath[0] == reads[readIndex].unitigPath[0]);
 	assert(correctedLocalPath.back() == reads[readIndex].unitigPath.back());

@@ -157,7 +157,7 @@ std::string UnitigStorage::getSequence(const std::vector<std::pair<size_t, bool>
 			}
 			else
 			{
-				rightClipBp = kmerBpOffsetInsideUnitig[path[i].first][rightClip];
+				leftClipBp = kmerBpOffsetInsideUnitig[path[i].first][rightClip];
 			}
 		}
 		add = unitigSequences[path[i].first].substr(leftClipBp, unitigSequences[path[i].first].size() - leftClipBp - rightClipBp);
