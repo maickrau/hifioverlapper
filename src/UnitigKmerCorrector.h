@@ -4,6 +4,7 @@
 #include <vector>
 #include <string>
 #include <tuple>
+#include <map>
 #include "UnitigStorage.h"
 #include "ReadHelper.h"
 
@@ -27,12 +28,16 @@ public:
 	{
 		for (size_t i = 0; i < reads.size(); i++)
 		{
-			std::string corrected = getRaw(i);
+			std::string corrected = getRawSequence(i);
 			callback(i, reads[i].name, corrected);
 		}
 	}
+	std::string getCorrectedSequence(size_t readIndex, const std::vector<size_t>& context, size_t minAmbiguousCoverage, size_t minSafeCoverage) const;
+	std::string getRawSequence(size_t index) const;
+	size_t numReads() const;
+	const std::string& getName(size_t index) const;
 private:
-	std::string getRaw(size_t index) const;
+	void getAnchorSpanners(phmap::flat_hash_map<std::pair<std::pair<size_t, bool>, std::pair<size_t, bool>>, std::map<std::vector<std::pair<size_t, bool>>, size_t>>& anchorSpannerCounts, const phmap::flat_hash_set<std::pair<std::pair<size_t, bool>, std::pair<size_t, bool>>>& adjacentAnchors, const phmap::flat_hash_set<std::pair<size_t, bool>>& isAnchor, size_t read) const;
 	size_t kmerSize;
 	UnitigStorage unitigs;
 	std::vector<Read> reads;
