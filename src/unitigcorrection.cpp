@@ -44,9 +44,10 @@ void iterateCorrectedReads(const UnitigKmerCorrector& corrector, const MatchInde
 					continue;
 				}
 				got->second.push_back(got->first);
+				auto fixedContext = corrector.filterDifferentHaplotypesOut(got->first, got->second, minAmbiguousCoverage, minSafeCoverage);
 				std::string corrected;
 				bool changed;
-				std::tie(corrected, changed) = corrector.getCorrectedSequence(got->first, got->second, minAmbiguousCoverage, minSafeCoverage);
+				std::tie(corrected, changed) = corrector.getCorrectedSequence(got->first, fixedContext, minAmbiguousCoverage, minSafeCoverage);
 				callback(got->first, corrector.getName(got->first), corrected, changed);
 			}
 		});
