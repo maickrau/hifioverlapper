@@ -9,6 +9,31 @@ UnitigKmerCorrector::UnitigKmerCorrector(size_t k) :
 {
 }
 
+std::pair<size_t, bool> findSimpleBubbleEnd(const VectorWithDirection<std::vector<std::pair<size_t, bool>>>& edges, std::pair<size_t, bool> startNode)
+{
+	if (edges[startNode].size() < 2) return std::make_pair(std::numeric_limits<size_t>::max(), true);
+	std::pair<size_t, bool> bubbleEnd { std::numeric_limits<size_t>::max(), true };
+	phmap::flat_hash_set<size_t> usedAlleles;
+	for (auto edge : edges[startNode])
+	{
+		std::pair<size_t, bool> pos = edge;
+		while (edges[pos].size() == 1 && edges[reverse(pos)].size() == 1)
+		{
+			if (usedAlleles.count(pos.first) == 1) return std::make_pair(std::numeric_limits<size_t>::max(), true);
+			usedAlleles.insert(pos.first);
+			pos = edges[pos][0];
+		}
+		if (bubbleEnd.first == std::numeric_limits<size_t>::max())
+		{
+			bubbleEnd = pos;
+		}
+		else if (pos != bubbleEnd) return std::make_pair(std::numeric_limits<size_t>::max(), true);
+	}
+	if (edges[reverse(bubbleEnd)].size() != edges[startNode].size()) return std::make_pair(std::numeric_limits<size_t>::max(), true);
+	if (bubbleEnd.first == startNode.first) return std::make_pair(std::numeric_limits<size_t>::max(), true);
+	return bubbleEnd;
+}
+
 void UnitigKmerCorrector::build(const ReadpartIterator& partIterator)
 {
 	std::mutex mutex;
@@ -282,9 +307,206 @@ std::pair<std::string, bool> UnitigKmerCorrector::getCorrectedSequence(size_t re
 	return std::make_pair(result, changed);
 }
 
+void UnitigKmerCorrector::assignReadsToAlleles(const std::vector<size_t>& context, const std::vector<size_t>& localToGlobal, std::vector<std::vector<size_t>>& result, std::vector<std::pair<size_t, bool>> alleles) const
+{
+	assert(alleles.size() >= 2);
+	result.resize(alleles.size()+1);
+	phmap::flat_hash_map<size_t, size_t> nodeToAllele;
+	for (size_t i = 0; i < alleles.size(); i++)
+	{
+		assert(nodeToAllele.count(localToGlobal[alleles[i].first]) == 0);
+		nodeToAllele[localToGlobal[alleles[i].first]] = i+1;
+	}
+	for (size_t read : context)
+	{
+		size_t readAlleleCount = 0;
+		for (std::pair<size_t, bool> node : reads[read].unitigPath)
+		{
+			if (nodeToAllele.count(node.first) == 0) continue;
+			result[nodeToAllele.at(node.first)].push_back(read);
+			readAlleleCount += 1;
+			if (readAlleleCount >= 2) break;
+		}
+		if (readAlleleCount >= 2)
+		{
+			for (std::pair<size_t, bool> node : reads[read].unitigPath)
+			{
+				if (nodeToAllele.count(node.first) == 0) continue;
+				assert(result[nodeToAllele.at(node.first)].size() >= 1);
+				assert(result[nodeToAllele.at(node.first)].back() == read);
+				result[nodeToAllele.at(node.first)].pop_back();
+				readAlleleCount -= 1;
+				if (readAlleleCount == 0) break;
+			}
+			result[0].push_back(read);
+		}
+	}
+	for (size_t i = 0; i < result.size(); i++)
+	{
+		std::sort(result[i].begin(), result[i].end());
+	}
+}
+
+size_t countMatches(const std::vector<size_t>& sortedLeft, const std::vector<size_t>& sortedRight)
+{
+	size_t result = 0;
+	size_t leftPos = 0;
+	size_t rightPos = 0;
+	while (leftPos < sortedLeft.size() && rightPos < sortedRight.size())
+	{
+		if (sortedLeft[leftPos] == sortedRight[rightPos])
+		{
+			result += 1;
+			leftPos += 1;
+			rightPos += 1;
+			continue;
+		}
+		if (sortedLeft[leftPos] < sortedRight[rightPos])
+		{
+			leftPos += 1;
+			continue;
+		}
+		if (sortedLeft[leftPos] > sortedRight[rightPos])
+		{
+			rightPos += 1;
+			continue;
+		}
+	}
+	return result;
+}
+
+bool checkPhasingValidity(const std::vector<std::vector<size_t>>& left, const std::vector<std::vector<size_t>>& right, size_t minAmbiguousCoverage, size_t minSafeCoverage)
+{
+	if (left.size() != right.size()) return false; // todo: implement variable number alleles. algorithm exists but need to write
+	if (left[0].size() + right[0].size() >= minAmbiguousCoverage) return false;
+	std::vector<size_t> uniqueRightMatch;
+	uniqueRightMatch.resize(right.size(), 0);
+	size_t nonMatchReads = 0;
+	for (size_t i = 1; i < left.size(); i++)
+	{
+		size_t uniqueMatch = 0;
+		for (size_t j = 1; j < right.size(); j++)
+		{
+			size_t matches = countMatches(left[i], right[j]);
+			if (matches >= minSafeCoverage)
+			{
+				if (uniqueMatch != 0) return false;
+				if (uniqueRightMatch[j] != 0) return false;
+				uniqueMatch = j;
+				uniqueRightMatch[j] = i;
+			}
+			else
+			{
+				nonMatchReads += matches;
+			}
+		}
+	}
+	if (nonMatchReads + left[0].size() + right[0].size() >= minAmbiguousCoverage) return false;
+	return true;
+}
+
+void UnitigKmerCorrector::forbidOtherHaplotypes(phmap::flat_hash_set<size_t>& forbiddenReads, size_t readIndex, const std::vector<std::vector<size_t>>& leftAlleles, const std::vector<std::vector<size_t>>& rightAlleles) const
+{
+	//todo: implement variable number alleles. algorithm exists but need to write
+	size_t leftIndex = 0;
+	size_t rightIndex = 0;
+	for (size_t i = 1; i < leftAlleles.size(); i++)
+	{
+		for (auto read : leftAlleles[i])
+		{
+			if (read == readIndex)
+			{
+				leftIndex = i;
+				break;
+			}
+		}
+		if (leftIndex != 0) break;
+	}
+	for (size_t i = 1; i < rightAlleles.size(); i++)
+	{
+		for (auto read : rightAlleles[i])
+		{
+			if (read == readIndex)
+			{
+				rightIndex = i;
+				break;
+			}
+		}
+		if (rightIndex != 0) break;
+	}
+	if (leftIndex == 0) return;
+	if (rightIndex == 0) return;
+	for (size_t i = 0; i < leftAlleles.size(); i++)
+	{
+		if (i == leftIndex) continue;
+		for (auto read : leftAlleles[i])
+		{
+			assert(read != readIndex);
+			forbiddenReads.insert(read);
+		}
+	}
+	for (size_t i = 0; i < rightAlleles.size(); i++)
+	{
+		if (i == rightIndex) continue;
+		for (auto read : rightAlleles[i])
+		{
+			assert(read != readIndex);
+			forbiddenReads.insert(read);
+		}
+	}
+}
+
 std::vector<size_t> UnitigKmerCorrector::filterDifferentHaplotypesOut(size_t readIndex, const std::vector<size_t>& context, size_t minAmbiguousCoverage, size_t minSafeCoverage) const
 {
-	return context;
+	LocalGraph graph = getLocalGraph(context, minAmbiguousCoverage, minSafeCoverage);
+	std::vector<std::vector<std::vector<size_t>>> bubbleAlleles;
+	std::vector<uint8_t> coverageInKeyRead;
+	coverageInKeyRead.resize(graph.size(), 0);
+	for (auto node : reads[readIndex].unitigPath)
+	{
+		size_t localIndex = graph.globalToLocal.at(node.first);
+		if (coverageInKeyRead[localIndex] < 2) coverageInKeyRead[localIndex] += 1;
+	}
+	for (size_t i = 0; i < graph.size(); i++)
+	{
+		if (coverageInKeyRead[i] != 1) continue;
+		auto foundBubbleEnd = findSimpleBubbleEnd(graph.ambiguousEdges, std::make_pair(i, true));
+		if (foundBubbleEnd.first != std::numeric_limits<size_t>::max() && foundBubbleEnd.first < i && coverageInKeyRead[foundBubbleEnd.first] == 1)
+		{
+			bubbleAlleles.emplace_back();
+			assignReadsToAlleles(context, graph.localToGlobal, bubbleAlleles.back(), graph.ambiguousEdges[std::make_pair(i, true)]);
+		}
+		foundBubbleEnd = findSimpleBubbleEnd(graph.ambiguousEdges, std::make_pair(i, false));
+		if (foundBubbleEnd.first != std::numeric_limits<size_t>::max() && foundBubbleEnd.first < i && coverageInKeyRead[foundBubbleEnd.first] == 1)
+		{
+			bubbleAlleles.emplace_back();
+			assignReadsToAlleles(context, graph.localToGlobal, bubbleAlleles.back(), graph.ambiguousEdges[std::make_pair(i, false)]);
+		}
+	}
+	phmap::flat_hash_set<size_t> forbiddenReads;
+	for (size_t i = 0; i < bubbleAlleles.size(); i++)
+	{
+		if (bubbleAlleles[i][0].size() >= minAmbiguousCoverage) continue;
+		for (size_t j = 0; j < i; j++)
+		{
+			if (bubbleAlleles[j][0].size() >= minAmbiguousCoverage) continue;
+			bool bubbleValidlyPhased = checkPhasingValidity(bubbleAlleles[i], bubbleAlleles[j], minAmbiguousCoverage, minSafeCoverage);
+			if (!bubbleValidlyPhased) continue;
+			forbidOtherHaplotypes(forbiddenReads, readIndex, bubbleAlleles[i], bubbleAlleles[j]);
+		}
+	}
+	assert(forbiddenReads.count(readIndex) == 0);
+	std::vector<size_t> fixedContext;
+	for (size_t read : context)
+	{
+		if (forbiddenReads.count(read) == 1) continue;
+		fixedContext.push_back(read);
+	}
+	if (fixedContext.size() < context.size())
+	{
+		return filterDifferentHaplotypesOut(readIndex, fixedContext, minAmbiguousCoverage, minSafeCoverage);
+	}
+	return fixedContext;
 }
 
 std::string UnitigKmerCorrector::getRawSequence(size_t index) const
@@ -302,4 +524,9 @@ size_t UnitigKmerCorrector::numReads() const
 const std::string& UnitigKmerCorrector::getName(size_t index) const
 {
 	return reads[index].name;
+}
+
+size_t UnitigKmerCorrector::LocalGraph::size() const
+{
+	return safeNode.size();
 }
