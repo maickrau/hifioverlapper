@@ -12,17 +12,6 @@
 
 class UnitigKmerCorrector
 {
-	class LocalGraph
-	{
-	public:
-		phmap::flat_hash_map<size_t, size_t> globalToLocal;
-		std::vector<size_t> localToGlobal;
-		std::vector<bool> safeNode;
-		std::vector<bool> ambiguousNode;
-		VectorWithDirection<std::vector<std::pair<size_t, bool>>> safeEdges;
-		VectorWithDirection<std::vector<std::pair<size_t, bool>>> ambiguousEdges;
-		size_t size() const;
-	};
 	class Read
 	{
 	public:
@@ -34,6 +23,17 @@ class UnitigKmerCorrector
 		std::string rightHanger;
 	};
 public:
+	class LocalGraph
+	{
+	public:
+		std::vector<size_t> globalToLocal;
+		std::vector<size_t> localToGlobal;
+		std::vector<bool> safeNode;
+		std::vector<bool> ambiguousNode;
+		VectorWithDirection<std::vector<std::pair<size_t, bool>>> safeEdges;
+		VectorWithDirection<std::vector<std::pair<size_t, bool>>> ambiguousEdges;
+		size_t size() const;
+	};
 	UnitigKmerCorrector(size_t k);
 	void build(const ReadpartIterator& iterator);
 	template <typename F>
@@ -51,7 +51,8 @@ public:
 	size_t numReads() const;
 	const std::string& getName(size_t index) const;
 private:
-	LocalGraph getLocalGraph(const std::vector<size_t>& context, size_t minAmbiguousCoverage, size_t minSafeCoverage) const;
+	void clearLocalGraph(LocalGraph& graph) const;
+	void assignLocalGraph(LocalGraph& graph, const std::vector<size_t>& context, size_t minAmbiguousCoverage, size_t minSafeCoverage) const;
 	std::vector<std::pair<size_t, bool>> getUniqueReplacementPath(std::pair<size_t, bool> start, std::pair<size_t, bool> end, const std::vector<bool>& allowedNodes, const VectorWithDirection<std::vector<std::pair<size_t, bool>>>& allowedEdges, const std::vector<size_t>& localToGlobal, size_t maxLength) const;
 	void assignReadsToAlleles(const std::vector<size_t>& context, const std::vector<size_t>& localToGlobal, std::vector<std::vector<size_t>>& result, std::vector<std::pair<size_t, bool>> alleles) const;
 	void forbidOtherHaplotypes(phmap::flat_hash_set<size_t>& forbiddenReads, size_t readIndex, const std::vector<std::vector<size_t>>& leftAlleles, const std::vector<std::vector<size_t>>& rightAlleles) const;

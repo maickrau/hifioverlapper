@@ -3,6 +3,8 @@
 #include <mutex>
 #include "UnitigKmerCorrector.h"
 
+thread_local UnitigKmerCorrector::LocalGraph localGraph;
+
 UnitigKmerCorrector::UnitigKmerCorrector(size_t k) :
 	kmerSize(k),
 	unitigs(k)
@@ -151,9 +153,23 @@ std::vector<std::pair<size_t, bool>> UnitigKmerCorrector::getUniqueReplacementPa
 	return result;
 }
 
-UnitigKmerCorrector::LocalGraph UnitigKmerCorrector::getLocalGraph(const std::vector<size_t>& context, size_t minAmbiguousCoverage, size_t minSafeCoverage) const
+void UnitigKmerCorrector::clearLocalGraph(LocalGraph& graph) const
 {
-	LocalGraph result;
+	for (size_t node : graph.localToGlobal)
+	{
+		graph.globalToLocal[node] = std::numeric_limits<size_t>::max();
+	}
+	graph.localToGlobal.clear();
+	graph.safeNode.clear();
+	graph.ambiguousNode.clear();
+	graph.safeEdges.clear();
+	graph.ambiguousEdges.clear();
+}
+
+void UnitigKmerCorrector::assignLocalGraph(LocalGraph& result, const std::vector<size_t>& context, size_t minAmbiguousCoverage, size_t minSafeCoverage) const
+{
+	assert(result.size() == 0);
+	result.globalToLocal.resize(unitigs.numUnitigs(), std::numeric_limits<size_t>::max());
 	std::vector<size_t> localCoverage;
 	phmap::flat_hash_map<std::pair<std::pair<size_t, bool>, std::pair<size_t, bool>>, size_t> localEdgeCoverage;
 	std::vector<bool> hasFwCoverage;
@@ -163,7 +179,7 @@ UnitigKmerCorrector::LocalGraph UnitigKmerCorrector::getLocalGraph(const std::ve
 		std::pair<size_t, bool> lastLocal { std::numeric_limits<size_t>::max(), false };
 		for (auto node : reads[read].unitigPath)
 		{
-			if (result.globalToLocal.count(node.first) == 0)
+			if (result.globalToLocal[node.first] == std::numeric_limits<size_t>::max())
 			{
 				result.globalToLocal[node.first] = localCoverage.size();
 				result.localToGlobal.push_back(node.first);
@@ -171,7 +187,7 @@ UnitigKmerCorrector::LocalGraph UnitigKmerCorrector::getLocalGraph(const std::ve
 				hasFwCoverage.push_back(false);
 				hasBwCoverage.push_back(false);
 			}
-			std::pair<size_t, bool> thislocal { result.globalToLocal.at(node.first), node.second };
+			std::pair<size_t, bool> thislocal { result.globalToLocal[node.first], node.second };
 			localCoverage[thislocal.first] += 1;
 			if (thislocal.second)
 			{
@@ -211,20 +227,19 @@ UnitigKmerCorrector::LocalGraph UnitigKmerCorrector::getLocalGraph(const std::ve
 			result.ambiguousEdges[reverse(pair.first.second)].emplace_back(reverse(pair.first.first));
 		}
 	}
-	return result;
 }
 
 std::pair<std::string, bool> UnitigKmerCorrector::getCorrectedSequence(size_t readIndex, const std::vector<size_t>& context, size_t minAmbiguousCoverage, size_t minSafeCoverage) const
 {
 	if (reads[readIndex].unitigPath.size() == 1) return std::make_pair(getRawSequence(readIndex), false);
-	LocalGraph graph = getLocalGraph(context, minAmbiguousCoverage, minSafeCoverage);
+	assignLocalGraph(localGraph, context, minAmbiguousCoverage, minSafeCoverage);
 	std::vector<std::pair<size_t, bool>> correctedLocalPath;
 	std::pair<size_t, bool> lastLocal { std::numeric_limits<size_t>::max(), false };
 	size_t lastMatch = std::numeric_limits<size_t>::max();
 	for (size_t i = 0; i < reads[readIndex].unitigPath.size(); i++)
 	{
-		std::pair<size_t, bool> thisLocal { graph.globalToLocal.at(reads[readIndex].unitigPath[i].first), reads[readIndex].unitigPath[i].second };
-		if (!graph.safeNode[thisLocal.first]) continue;
+		std::pair<size_t, bool> thisLocal { localGraph.globalToLocal[reads[readIndex].unitigPath[i].first], reads[readIndex].unitigPath[i].second };
+		if (!localGraph.safeNode[thisLocal.first]) continue;
 		if (lastMatch == std::numeric_limits<size_t>::max())
 		{
 			correctedLocalPath.insert(correctedLocalPath.end(), reads[readIndex].unitigPath.begin(), reads[readIndex].unitigPath.begin()+i+1);
@@ -237,7 +252,7 @@ std::pair<std::string, bool> UnitigKmerCorrector::getCorrectedSequence(size_t re
 		{
 			maxLength += unitigs.unitigMinusEdgeLength(reads[readIndex].unitigPath[j-1], reads[readIndex].unitigPath[j]);
 		}
-		std::vector<std::pair<size_t, bool>> uniqueReplacement = getUniqueReplacementPath(lastLocal, thisLocal, graph.ambiguousNode, graph.ambiguousEdges, graph.localToGlobal, maxLength+500);
+		std::vector<std::pair<size_t, bool>> uniqueReplacement = getUniqueReplacementPath(lastLocal, thisLocal, localGraph.ambiguousNode, localGraph.ambiguousEdges, localGraph.localToGlobal, maxLength+500);
 		if (uniqueReplacement.size() == 0)
 		{
 			correctedLocalPath.insert(correctedLocalPath.end(), reads[readIndex].unitigPath.begin()+lastMatch+1, reads[readIndex].unitigPath.begin()+i+1);
@@ -248,14 +263,14 @@ std::pair<std::string, bool> UnitigKmerCorrector::getCorrectedSequence(size_t re
 		bool allSafe = true;
 		for (size_t j = 0; j < uniqueReplacement.size(); j++)
 		{
-			if (!graph.safeNode[uniqueReplacement[j].first]) allSafe = false;
+			if (!localGraph.safeNode[uniqueReplacement[j].first]) allSafe = false;
 		}
 		if (allSafe)
 		{
 			for (size_t j = 1; j < uniqueReplacement.size(); j++)
 			{
 				bool found = false;
-				for (auto edge : graph.safeEdges[uniqueReplacement[j-1]])
+				for (auto edge : localGraph.safeEdges[uniqueReplacement[j-1]])
 				{
 					if (edge == uniqueReplacement[j])
 					{
@@ -279,7 +294,7 @@ std::pair<std::string, bool> UnitigKmerCorrector::getCorrectedSequence(size_t re
 		}
 		for (size_t j = 0; j < uniqueReplacement.size(); j++)
 		{
-			uniqueReplacement[j].first = graph.localToGlobal[uniqueReplacement[j].first];
+			uniqueReplacement[j].first = localGraph.localToGlobal[uniqueReplacement[j].first];
 		}
 		assert(uniqueReplacement[0] == reads[readIndex].unitigPath[lastMatch]);
 		assert(uniqueReplacement.back() == reads[readIndex].unitigPath[i]);
@@ -304,6 +319,7 @@ std::pair<std::string, bool> UnitigKmerCorrector::getCorrectedSequence(size_t re
 	assert(correctedLocalPath[0] == reads[readIndex].unitigPath[0]);
 	assert(correctedLocalPath.back() == reads[readIndex].unitigPath.back());
 	std::string result = reads[readIndex].leftHanger + unitigs.getSequence(correctedLocalPath, reads[readIndex].leftClip, reads[readIndex].rightClip) + reads[readIndex].rightHanger;
+	clearLocalGraph(localGraph);
 	return std::make_pair(result, changed);
 }
 
@@ -458,29 +474,29 @@ void UnitigKmerCorrector::forbidOtherHaplotypes(phmap::flat_hash_set<size_t>& fo
 
 std::vector<size_t> UnitigKmerCorrector::filterDifferentHaplotypesOut(size_t readIndex, const std::vector<size_t>& context, size_t minAmbiguousCoverage, size_t minSafeCoverage) const
 {
-	LocalGraph graph = getLocalGraph(context, minAmbiguousCoverage, minSafeCoverage);
+	assignLocalGraph(localGraph, context, minAmbiguousCoverage, minSafeCoverage);
 	std::vector<std::vector<std::vector<size_t>>> bubbleAlleles;
 	std::vector<uint8_t> coverageInKeyRead;
-	coverageInKeyRead.resize(graph.size(), 0);
+	coverageInKeyRead.resize(localGraph.size(), 0);
 	for (auto node : reads[readIndex].unitigPath)
 	{
-		size_t localIndex = graph.globalToLocal.at(node.first);
+		size_t localIndex = localGraph.globalToLocal[node.first];
 		if (coverageInKeyRead[localIndex] < 2) coverageInKeyRead[localIndex] += 1;
 	}
-	for (size_t i = 0; i < graph.size(); i++)
+	for (size_t i = 0; i < localGraph.size(); i++)
 	{
 		if (coverageInKeyRead[i] != 1) continue;
-		auto foundBubbleEnd = findSimpleBubbleEnd(graph.ambiguousEdges, std::make_pair(i, true));
+		auto foundBubbleEnd = findSimpleBubbleEnd(localGraph.ambiguousEdges, std::make_pair(i, true));
 		if (foundBubbleEnd.first != std::numeric_limits<size_t>::max() && foundBubbleEnd.first < i && coverageInKeyRead[foundBubbleEnd.first] == 1)
 		{
 			bubbleAlleles.emplace_back();
-			assignReadsToAlleles(context, graph.localToGlobal, bubbleAlleles.back(), graph.ambiguousEdges[std::make_pair(i, true)]);
+			assignReadsToAlleles(context, localGraph.localToGlobal, bubbleAlleles.back(), localGraph.ambiguousEdges[std::make_pair(i, true)]);
 		}
-		foundBubbleEnd = findSimpleBubbleEnd(graph.ambiguousEdges, std::make_pair(i, false));
+		foundBubbleEnd = findSimpleBubbleEnd(localGraph.ambiguousEdges, std::make_pair(i, false));
 		if (foundBubbleEnd.first != std::numeric_limits<size_t>::max() && foundBubbleEnd.first < i && coverageInKeyRead[foundBubbleEnd.first] == 1)
 		{
 			bubbleAlleles.emplace_back();
-			assignReadsToAlleles(context, graph.localToGlobal, bubbleAlleles.back(), graph.ambiguousEdges[std::make_pair(i, false)]);
+			assignReadsToAlleles(context, localGraph.localToGlobal, bubbleAlleles.back(), localGraph.ambiguousEdges[std::make_pair(i, false)]);
 		}
 	}
 	phmap::flat_hash_set<size_t> forbiddenReads;
@@ -502,6 +518,7 @@ std::vector<size_t> UnitigKmerCorrector::filterDifferentHaplotypesOut(size_t rea
 		if (forbiddenReads.count(read) == 1) continue;
 		fixedContext.push_back(read);
 	}
+	clearLocalGraph(localGraph);
 	if (fixedContext.size() < context.size())
 	{
 		return filterDifferentHaplotypesOut(readIndex, fixedContext, minAmbiguousCoverage, minSafeCoverage);
