@@ -95,6 +95,43 @@ public:
 	}
 };
 
+void UnitigKmerCorrector::addPathsRecursive(std::vector<std::vector<std::pair<size_t, bool>>>& result, std::vector<std::pair<size_t, bool>>& currentPath, const std::pair<size_t, bool> pos, const std::pair<size_t, bool> end, const phmap::flat_hash_set<std::pair<size_t, bool>>& bwVisited, const std::vector<bool>& allowedNodes, const VectorWithDirection<std::vector<std::pair<size_t, bool>>>& allowedEdges, size_t maxPaths) const
+{
+	if (currentPath.size() >= 500)
+	{
+		result.resize(maxPaths+1);
+		return;
+	}
+	currentPath.push_back(pos);
+	if (pos == end)
+	{
+		result.emplace_back(currentPath);
+		currentPath.pop_back();
+		return;
+	}
+	for (auto edge : allowedEdges[pos])
+	{
+		if (!allowedNodes[edge.first]) continue;
+		if (bwVisited.count(reverse(edge)) == 0) continue;
+		addPathsRecursive(result, currentPath, edge, end, bwVisited, allowedNodes, allowedEdges, maxPaths);
+		if (result.size() > maxPaths) return;
+	}
+	assert(currentPath.back() == pos);
+	currentPath.pop_back();
+}
+
+std::vector<std::vector<std::pair<size_t, bool>>> UnitigKmerCorrector::getPossiblePaths(const std::pair<size_t, bool> start, const std::pair<size_t, bool> end, const phmap::flat_hash_set<std::pair<size_t, bool>>& bwVisited, const std::vector<bool>& allowedNodes, const VectorWithDirection<std::vector<std::pair<size_t, bool>>>& allowedEdges, size_t maxPaths) const
+{
+	std::vector<std::vector<std::pair<size_t, bool>>> result;
+	std::vector<std::pair<size_t, bool>> currentPath;
+	addPathsRecursive(result, currentPath, start, end, bwVisited, allowedNodes, allowedEdges, maxPaths);
+	if (result.size() > maxPaths)
+	{
+		result.clear();
+	}
+	return result;
+}
+
 std::vector<std::pair<size_t, bool>> UnitigKmerCorrector::getUniqueReplacementPath(const std::pair<size_t, bool> start, const std::pair<size_t, bool> end, const std::vector<bool>& allowedNodes, const VectorWithDirection<std::vector<std::pair<size_t, bool>>>& allowedEdges, const std::vector<size_t>& localToGlobal, size_t maxLength) const
 {
 	if (end == start) return std::vector<std::pair<size_t, bool>>{};
@@ -123,34 +160,9 @@ std::vector<std::pair<size_t, bool>> UnitigKmerCorrector::getUniqueReplacementPa
 			checkStack.emplace(distance + extra, edge);
 		}
 	}
-	std::vector<std::pair<size_t, bool>> result;
-	result.push_back(start);
-	phmap::flat_hash_set<std::pair<size_t, bool>> visited;
-	while (result.back() != end)
-	{
-		std::pair<size_t, bool> uniqueOption { std::numeric_limits<size_t>::max(), false };
-		if (allowedEdges[result.back()].size() == 0) return std::vector<std::pair<size_t, bool>>{};
-		for (auto edge : allowedEdges[result.back()])
-		{
-			if (bwVisited.count(reverse(edge)) == 0) continue;
-			if (uniqueOption.first == std::numeric_limits<size_t>::max())
-			{
-				uniqueOption = edge;
-			}
-			else
-			{
-				return std::vector<std::pair<size_t, bool>>{};
-			}
-		}
-		if (uniqueOption.first == std::numeric_limits<size_t>::max()) return std::vector<std::pair<size_t, bool>>{};
-		assert(visited.count(uniqueOption) == 0);
-		result.push_back(uniqueOption);
-		visited.insert(uniqueOption);
-	}
-	assert(result.size() > 1);
-	assert(result[0] == start);
-	assert(result.back() == end);
-	return result;
+	auto paths = getPossiblePaths(start, end, bwVisited, allowedNodes, allowedEdges, 1);
+	if (paths.size() == 1) return paths[0];
+	return std::vector<std::pair<size_t, bool>>{};
 }
 
 void UnitigKmerCorrector::clearLocalGraph(LocalGraph& graph) const
