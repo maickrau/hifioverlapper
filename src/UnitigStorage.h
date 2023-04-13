@@ -18,7 +18,9 @@ public:
 	std::pair<size_t, bool> getNodeOrNull(HashType hash) const;
 	void addEdge(std::pair<size_t, bool> from, std::pair<size_t, bool> to, size_t overlap);
 	std::tuple<size_t, size_t, std::vector<std::pair<size_t, bool>>> getPath(const std::vector<HashType>& hashes) const;
-	std::string getSequence(const std::vector<std::pair<size_t, bool>>& path, size_t leftClip, size_t rightClip) const;
+	std::string getSequenceBpClip(const std::vector<std::pair<size_t, bool>>& path, size_t leftClipBp, size_t rightClipBp) const;
+	std::string getSequence(const std::vector<std::pair<size_t, bool>>& path, size_t leftClipKmer, size_t rightClipKmer) const;
+	size_t unitigSize(size_t unitig) const;
 	size_t unitigMinusEdgeLength(const std::pair<size_t, bool> fromUnitig, const std::pair<size_t, bool> toUnitig) const;
 	void buildUnitigGraph();
 	void addKmerSequence(std::pair<size_t, bool> kmer, const std::string& seq, size_t start, size_t end);

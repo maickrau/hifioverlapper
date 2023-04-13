@@ -117,7 +117,57 @@ void UnitigStorage::addEdge(std::pair<size_t, bool> from, std::pair<size_t, bool
 	kmerOverlap[key] = overlap;
 }
 
-std::string UnitigStorage::getSequence(const std::vector<std::pair<size_t, bool>>& path, size_t leftClip, size_t rightClip) const
+std::string UnitigStorage::getSequenceBpClip(const std::vector<std::pair<size_t, bool>>& path, const size_t leftClipBp, const size_t rightClipBp) const
+{
+	std::string result;
+	for (size_t i = 0; i < path.size(); i++)
+	{
+		std::string add;
+		size_t leftClipBpHere = 0;
+		size_t rightClipBpHere = 0;
+		if (i == 0)
+		{
+			if (path[i].second)
+			{
+				leftClipBpHere = leftClipBp;
+			}
+			else
+			{
+				rightClipBpHere = leftClipBp;
+			}
+		}
+		else
+		{
+			auto c = canon(path[i-1], path[i]);
+			size_t overlap = unitigEdgeOverlap.at(std::make_pair(pairToNum(c.first), pairToNum(c.second)));
+			if (path[i].second)
+			{
+				leftClipBpHere = overlap;
+			}
+			else
+			{
+				rightClipBpHere = overlap;
+			}
+		}
+		if (i == path.size()-1)
+		{
+			if (path[i].second)
+			{
+				rightClipBpHere = rightClipBp;
+			}
+			else
+			{
+				leftClipBpHere = rightClipBp;
+			}
+		}
+		add = unitigSequences[path[i].first].substr(leftClipBpHere, unitigSequences[path[i].first].size() - leftClipBpHere - rightClipBpHere);
+		if (!path[i].second) add = revCompRaw(add);
+		result += add;
+	}
+	return result;
+}
+
+std::string UnitigStorage::getSequence(const std::vector<std::pair<size_t, bool>>& path, size_t leftClipKmer, size_t rightClipKmer) const
 {
 	std::string result;
 	for (size_t i = 0; i < path.size(); i++)
@@ -129,11 +179,11 @@ std::string UnitigStorage::getSequence(const std::vector<std::pair<size_t, bool>
 		{
 			if (path[i].second)
 			{
-				leftClipBp = kmerBpOffsetInsideUnitig[path[i].first][leftClip];
+				leftClipBp = kmerBpOffsetInsideUnitig[path[i].first][leftClipKmer];
 			}
 			else
 			{
-				rightClipBp = kmerBpOffsetInsideUnitig[path[i].first].back() - kmerBpOffsetInsideUnitig[path[i].first][kmerBpOffsetInsideUnitig[path[i].first].size()-1-leftClip];
+				rightClipBp = kmerBpOffsetInsideUnitig[path[i].first].back() - kmerBpOffsetInsideUnitig[path[i].first][kmerBpOffsetInsideUnitig[path[i].first].size()-1-leftClipKmer];
 			}
 		}
 		else
@@ -153,11 +203,11 @@ std::string UnitigStorage::getSequence(const std::vector<std::pair<size_t, bool>
 		{
 			if (path[i].second)
 			{
-				rightClipBp = kmerBpOffsetInsideUnitig[path[i].first].back() - kmerBpOffsetInsideUnitig[path[i].first][kmerBpOffsetInsideUnitig[path[i].first].size()-1-rightClip];
+				rightClipBp = kmerBpOffsetInsideUnitig[path[i].first].back() - kmerBpOffsetInsideUnitig[path[i].first][kmerBpOffsetInsideUnitig[path[i].first].size()-1-rightClipKmer];
 			}
 			else
 			{
-				leftClipBp = kmerBpOffsetInsideUnitig[path[i].first][rightClip];
+				leftClipBp = kmerBpOffsetInsideUnitig[path[i].first][rightClipKmer];
 			}
 		}
 		add = unitigSequences[path[i].first].substr(leftClipBp, unitigSequences[path[i].first].size() - leftClipBp - rightClipBp);
@@ -417,4 +467,9 @@ size_t UnitigStorage::unitigMinusEdgeLength(const std::pair<size_t, bool> fromUn
 	size_t overlap = unitigEdgeOverlap.at(std::make_pair(pairToNum(c.first), pairToNum(c.second)));
 	assert(overlap < result);
 	return result - overlap;
+}
+
+size_t UnitigStorage::unitigSize(size_t unitig) const
+{
+	return unitigSequences[unitig].size();
 }

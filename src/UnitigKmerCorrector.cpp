@@ -132,7 +132,118 @@ std::vector<std::vector<std::pair<size_t, bool>>> UnitigKmerCorrector::getPossib
 	return result;
 }
 
-std::vector<std::pair<size_t, bool>> UnitigKmerCorrector::getUniqueReplacementPath(const std::pair<size_t, bool> start, const std::pair<size_t, bool> end, const std::vector<bool>& allowedNodes, const VectorWithDirection<std::vector<std::pair<size_t, bool>>>& allowedEdges, const std::vector<size_t>& localToGlobal, size_t maxLength) const
+bool UnitigKmerCorrector::pathHomopolymerOrMicrosatelliteMatch(const std::string& path1, const std::string& path2) const
+{
+	if (path1.size() > path2.size() + 10) return false;
+	if (path2.size() > path1.size() + 10) return false;
+	size_t leftClip = 0;
+	size_t rightClip = 0;
+	while (leftClip < path1.size() && leftClip < path2.size() && path1[leftClip] == path2[leftClip]) leftClip += 1;
+	while (leftClip+rightClip < path1.size() && leftClip+rightClip < path2.size() && path1[path1.size()-1-rightClip] == path2[path2.size()-1-rightClip]) rightClip += 1;
+	if (leftClip + rightClip < path1.size() && leftClip + rightClip < path2.size()) return false;
+	assert(leftClip + rightClip != path1.size() || leftClip + rightClip != path2.size());
+	size_t indelSize = 0;
+	if (leftClip + rightClip < path1.size())
+	{
+		assert(leftClip + rightClip == path2.size());
+		indelSize = path1.size() - (leftClip + rightClip);
+		if (indelSize > 10) return false;
+		std::string indelSequence = path1.substr(leftClip, indelSize);
+		assert(indelSequence.size() == indelSize);
+		if (leftClip >= indelSize && path1.substr(leftClip - indelSize, indelSize) == indelSequence) return true;
+		if (rightClip >= indelSize && path1.substr(leftClip + indelSize, indelSize) == indelSequence) return true;
+		return false;
+	}
+	else
+	{
+		assert(leftClip + rightClip == path1.size());
+		assert(leftClip + rightClip < path2.size());
+		indelSize = path2.size() - (leftClip + rightClip);
+		if (indelSize > 10) return false;
+		std::string indelSequence = path2.substr(leftClip, indelSize);
+		assert(indelSequence.size() == indelSize);
+		if (leftClip >= indelSize && path2.substr(leftClip - indelSize, indelSize) == indelSequence) return true;
+		if (rightClip >= indelSize && path2.substr(leftClip + indelSize, indelSize) == indelSequence) return true;
+		return false;
+	}
+}
+
+std::string UnitigKmerCorrector::getPathSequence(const std::vector<std::pair<size_t, bool>>& path, const LocalGraph& graph) const
+{
+	assert(path.size() >= 2);
+	std::vector<std::pair<size_t, bool>> globalPath;
+	for (auto node : path)
+	{
+		globalPath.emplace_back(graph.localToGlobal[node.first], node.second);
+	}
+	size_t startClip = unitigs.unitigSize(globalPath[0].first);
+	size_t endClip = unitigs.unitigMinusEdgeLength(globalPath[globalPath.size()-2], globalPath[globalPath.size()-1]);
+	return unitigs.getSequenceBpClip(globalPath, startClip, endClip);
+}
+
+size_t UnitigKmerCorrector::getPathCoverage(const std::vector<std::pair<size_t, bool>>& path, const LocalGraph& graph) const
+{
+	assert(path.size() >= 1);
+	size_t result = graph.localCoverage[path[0].first];
+	for (size_t i = 1; i < path.size(); i++)
+	{
+		result = std::min(result, graph.localCoverage[path[i].first]);
+	}
+	return result;
+}
+
+void UnitigKmerCorrector::filterOutHomopolymerOrMicrosatellitePaths(std::vector<std::vector<std::pair<size_t, bool>>>& paths, const LocalGraph& graph) const
+{
+	if (paths.size() < 2) return;
+	std::vector<size_t> parent;
+	parent.resize(paths.size());
+	for (size_t i = 0; i < parent.size(); i++)
+	{
+		parent[i] = i;
+	}
+	std::vector<std::string> pathSequences;
+	std::vector<size_t> pathCoverages;
+	pathSequences.resize(parent.size());
+	pathCoverages.resize(parent.size());
+	for (size_t i = 0; i < parent.size(); i++)
+	{
+		pathSequences[i] = getPathSequence(paths[i], graph);
+		pathCoverages[i] = getPathCoverage(paths[i], graph);
+	}
+	for (size_t i = 0; i < parent.size(); i++)
+	{
+		for (size_t j = 0; j < i; j++)
+		{
+			if (pathHomopolymerOrMicrosatelliteMatch(pathSequences[i], pathSequences[j]))
+			{
+				while (parent[parent[i]] != parent[i]) parent[i] = parent[parent[i]];
+				while (parent[parent[j]] != parent[j]) parent[j] = parent[parent[j]];
+				parent[j] = parent[i];
+			}
+		}
+	}
+	std::vector<size_t> clusterMaxCoverage;
+	clusterMaxCoverage.resize(parent.size(), 0);
+	for (size_t i = 0; i < parent.size(); i++)
+	{
+		while (parent[parent[i]] != parent[i]) parent[i] = parent[parent[i]];
+		clusterMaxCoverage[parent[i]] = std::max(clusterMaxCoverage[parent[i]], pathCoverages[i]);
+	}
+	std::vector<bool> keep;
+	keep.resize(paths.size(), true);
+	for (size_t i = 0; i < parent.size(); i++)
+	{
+		if (clusterMaxCoverage[parent[i]] >= pathCoverages[i]*2) keep[i] = false;
+	}
+	for (size_t i = parent.size()-1; i < parent.size(); i--)
+	{
+		if (keep[i]) continue;
+		std::swap(paths[i], paths.back());
+		paths.pop_back();
+	}
+}
+
+std::vector<std::pair<size_t, bool>> UnitigKmerCorrector::getUniqueReplacementPath(const std::pair<size_t, bool> start, const std::pair<size_t, bool> end, const LocalGraph& graph, const std::vector<bool>& allowedNodes, const VectorWithDirection<std::vector<std::pair<size_t, bool>>>& allowedEdges, const std::vector<size_t>& localToGlobal, size_t maxLength) const
 {
 	if (end == start) return std::vector<std::pair<size_t, bool>>{};
 	assert(end.first < allowedEdges.size());
@@ -160,7 +271,8 @@ std::vector<std::pair<size_t, bool>> UnitigKmerCorrector::getUniqueReplacementPa
 			checkStack.emplace(distance + extra, edge);
 		}
 	}
-	auto paths = getPossiblePaths(start, end, bwVisited, allowedNodes, allowedEdges, 1);
+	auto paths = getPossiblePaths(start, end, bwVisited, allowedNodes, allowedEdges, 20);
+	filterOutHomopolymerOrMicrosatellitePaths(paths, graph);
 	if (paths.size() == 1) return paths[0];
 	return std::vector<std::pair<size_t, bool>>{};
 }
@@ -171,6 +283,7 @@ void UnitigKmerCorrector::clearLocalGraph(LocalGraph& graph) const
 	{
 		graph.globalToLocal[node] = std::numeric_limits<size_t>::max();
 	}
+	graph.localCoverage.clear();
 	graph.localToGlobal.clear();
 	graph.safeNode.clear();
 	graph.ambiguousNode.clear();
@@ -182,7 +295,6 @@ void UnitigKmerCorrector::assignLocalGraph(LocalGraph& result, const std::vector
 {
 	assert(result.size() == 0);
 	result.globalToLocal.resize(unitigs.numUnitigs(), std::numeric_limits<size_t>::max());
-	std::vector<size_t> localCoverage;
 	phmap::flat_hash_map<std::pair<std::pair<size_t, bool>, std::pair<size_t, bool>>, size_t> localEdgeCoverage;
 	std::vector<bool> hasFwCoverage;
 	std::vector<bool> hasBwCoverage;
@@ -193,14 +305,14 @@ void UnitigKmerCorrector::assignLocalGraph(LocalGraph& result, const std::vector
 		{
 			if (result.globalToLocal[node.first] == std::numeric_limits<size_t>::max())
 			{
-				result.globalToLocal[node.first] = localCoverage.size();
+				result.globalToLocal[node.first] = result.localCoverage.size();
 				result.localToGlobal.push_back(node.first);
-				localCoverage.push_back(0);
+				result.localCoverage.push_back(0);
 				hasFwCoverage.push_back(false);
 				hasBwCoverage.push_back(false);
 			}
 			std::pair<size_t, bool> thislocal { result.globalToLocal[node.first], node.second };
-			localCoverage[thislocal.first] += 1;
+			result.localCoverage[thislocal.first] += 1;
 			if (thislocal.second)
 			{
 				hasFwCoverage[thislocal.first] = true;
@@ -213,16 +325,16 @@ void UnitigKmerCorrector::assignLocalGraph(LocalGraph& result, const std::vector
 			lastLocal = thislocal;
 		}
 	}
-	result.safeNode.resize(localCoverage.size(), false);
-	result.ambiguousNode.resize(localCoverage.size(), false);
-	result.safeEdges.resize(localCoverage.size());
-	result.ambiguousEdges.resize(localCoverage.size());
-	for (size_t i = 0; i < localCoverage.size(); i++)
+	result.safeNode.resize(result.localCoverage.size(), false);
+	result.ambiguousNode.resize(result.localCoverage.size(), false);
+	result.safeEdges.resize(result.localCoverage.size());
+	result.ambiguousEdges.resize(result.localCoverage.size());
+	for (size_t i = 0; i < result.localCoverage.size(); i++)
 	{
 		if (!hasFwCoverage[i]) continue;
 		if (!hasBwCoverage[i]) continue;
-		if (localCoverage[i] >= minSafeCoverage) result.safeNode[i] = true;
-		if (localCoverage[i] >= minAmbiguousCoverage) result.ambiguousNode[i] = true;
+		if (result.localCoverage[i] >= minSafeCoverage) result.safeNode[i] = true;
+		if (result.localCoverage[i] >= minAmbiguousCoverage) result.ambiguousNode[i] = true;
 	}
 	for (auto pair : localEdgeCoverage)
 	{
@@ -264,7 +376,7 @@ std::pair<std::string, bool> UnitigKmerCorrector::getCorrectedSequence(size_t re
 		{
 			maxLength += unitigs.unitigMinusEdgeLength(reads[readIndex].unitigPath[j-1], reads[readIndex].unitigPath[j]);
 		}
-		std::vector<std::pair<size_t, bool>> uniqueReplacement = getUniqueReplacementPath(lastLocal, thisLocal, localGraph.ambiguousNode, localGraph.ambiguousEdges, localGraph.localToGlobal, maxLength+500);
+		std::vector<std::pair<size_t, bool>> uniqueReplacement = getUniqueReplacementPath(lastLocal, thisLocal, localGraph, localGraph.ambiguousNode, localGraph.ambiguousEdges, localGraph.localToGlobal, maxLength+500);
 		if (uniqueReplacement.size() == 0)
 		{
 			correctedLocalPath.insert(correctedLocalPath.end(), reads[readIndex].unitigPath.begin()+lastMatch+1, reads[readIndex].unitigPath.begin()+i+1);
