@@ -54,7 +54,7 @@ private:
 	void clearLocalGraph(LocalGraph& graph) const;
 	void assignLocalGraph(LocalGraph& graph, const std::vector<size_t>& context, size_t minAmbiguousCoverage, size_t minSafeCoverage) const;
 	std::vector<std::pair<size_t, bool>> getUniqueReplacementPath(std::pair<size_t, bool> start, std::pair<size_t, bool> end, const std::vector<bool>& allowedNodes, const VectorWithDirection<std::vector<std::pair<size_t, bool>>>& allowedEdges, const std::vector<size_t>& localToGlobal, size_t maxLength) const;
-	void assignReadsToAlleles(const std::vector<size_t>& context, const std::vector<size_t>& localToGlobal, std::vector<std::vector<size_t>>& result, std::vector<std::pair<size_t, bool>> alleles) const;
+	void assignReadsToAlleles(const std::vector<size_t>& context, const std::vector<size_t>& localToGlobal, std::vector<std::vector<std::vector<size_t>>>& result, const std::vector<std::vector<size_t>>& alleles) const;
 	void forbidOtherHaplotypes(phmap::flat_hash_set<size_t>& forbiddenReads, size_t readIndex, const std::vector<std::vector<size_t>>& leftAlleles, const std::vector<std::vector<size_t>>& rightAlleles) const;
 	size_t kmerSize;
 	UnitigStorage unitigs;

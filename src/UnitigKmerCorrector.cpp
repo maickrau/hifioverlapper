@@ -323,43 +323,64 @@ std::pair<std::string, bool> UnitigKmerCorrector::getCorrectedSequence(size_t re
 	return std::make_pair(result, changed);
 }
 
-void UnitigKmerCorrector::assignReadsToAlleles(const std::vector<size_t>& context, const std::vector<size_t>& localToGlobal, std::vector<std::vector<size_t>>& result, std::vector<std::pair<size_t, bool>> alleles) const
+void UnitigKmerCorrector::assignReadsToAlleles(const std::vector<size_t>& context, const std::vector<size_t>& localToGlobal, std::vector<std::vector<std::vector<size_t>>>& result, const std::vector<std::vector<size_t>>& alleles) const
 {
-	assert(alleles.size() >= 2);
-	result.resize(alleles.size()+1);
-	phmap::flat_hash_map<size_t, size_t> nodeToAllele;
+	result.resize(alleles.size());
 	for (size_t i = 0; i < alleles.size(); i++)
 	{
-		assert(nodeToAllele.count(localToGlobal[alleles[i].first]) == 0);
-		nodeToAllele[localToGlobal[alleles[i].first]] = i+1;
+		assert(alleles[i].size() >= 2);
+		result[i].resize(alleles[i].size()+1);
+	}
+	phmap::flat_hash_map<size_t, std::pair<size_t, size_t>> nodeToAllele;
+	for (size_t i = 0; i < alleles.size(); i++)
+	{
+		for (size_t j = 0; j < alleles[i].size(); j++)
+		{
+			assert(nodeToAllele.count(localToGlobal[alleles[i][j]]) == 0);
+			nodeToAllele[localToGlobal[alleles[i][j]]] = std::make_pair(i, j+1);
+		}
 	}
 	for (size_t read : context)
 	{
-		size_t readAlleleCount = 0;
+		std::vector<uint8_t> readAlleleCount;
+		readAlleleCount.resize(result.size(), 0);
+		bool shouldRewind = false;
 		for (std::pair<size_t, bool> node : reads[read].unitigPath)
 		{
 			if (nodeToAllele.count(node.first) == 0) continue;
-			result[nodeToAllele.at(node.first)].push_back(read);
-			readAlleleCount += 1;
-			if (readAlleleCount >= 2) break;
+			auto pos = nodeToAllele.at(node.first);
+			if (readAlleleCount[pos.first] >= 1)
+			{
+				readAlleleCount[pos.first] = 2;
+				shouldRewind = true;
+				continue;
+			}
+			result[pos.first][pos.second].push_back(read);
+			readAlleleCount[pos.first] += 1;
 		}
-		if (readAlleleCount >= 2)
+		if (shouldRewind)
 		{
 			for (std::pair<size_t, bool> node : reads[read].unitigPath)
 			{
 				if (nodeToAllele.count(node.first) == 0) continue;
-				assert(result[nodeToAllele.at(node.first)].size() >= 1);
-				assert(result[nodeToAllele.at(node.first)].back() == read);
-				result[nodeToAllele.at(node.first)].pop_back();
-				readAlleleCount -= 1;
-				if (readAlleleCount == 0) break;
+				auto pos = nodeToAllele.at(node.first);
+				if (readAlleleCount[pos.first] == 2)
+				{
+					assert(result[pos.first][pos.second].size() >= 1);
+					assert(result[pos.first][pos.second].back() == read);
+					result[pos.first][pos.second].pop_back();
+					readAlleleCount[pos.first] = 0;
+					result[pos.first][0].push_back(read);
+				}
 			}
-			result[0].push_back(read);
 		}
 	}
 	for (size_t i = 0; i < result.size(); i++)
 	{
-		std::sort(result[i].begin(), result[i].end());
+		for (size_t j = 0; j < result[i].size(); j++)
+		{
+			std::sort(result[i][j].begin(), result[i][j].end());
+		}
 	}
 }
 
@@ -475,7 +496,6 @@ void UnitigKmerCorrector::forbidOtherHaplotypes(phmap::flat_hash_set<size_t>& fo
 std::vector<size_t> UnitigKmerCorrector::filterDifferentHaplotypesOut(size_t readIndex, const std::vector<size_t>& context, size_t minAmbiguousCoverage, size_t minSafeCoverage) const
 {
 	assignLocalGraph(localGraph, context, minAmbiguousCoverage, minSafeCoverage);
-	std::vector<std::vector<std::vector<size_t>>> bubbleAlleles;
 	std::vector<uint8_t> coverageInKeyRead;
 	coverageInKeyRead.resize(localGraph.size(), 0);
 	for (auto node : reads[readIndex].unitigPath)
@@ -483,32 +503,41 @@ std::vector<size_t> UnitigKmerCorrector::filterDifferentHaplotypesOut(size_t rea
 		size_t localIndex = localGraph.globalToLocal[node.first];
 		if (coverageInKeyRead[localIndex] < 2) coverageInKeyRead[localIndex] += 1;
 	}
+	std::vector<std::vector<size_t>> alleles;
 	for (size_t i = 0; i < localGraph.size(); i++)
 	{
 		if (coverageInKeyRead[i] != 1) continue;
 		auto foundBubbleEnd = findSimpleBubbleEnd(localGraph.ambiguousEdges, std::make_pair(i, true));
 		if (foundBubbleEnd.first != std::numeric_limits<size_t>::max() && foundBubbleEnd.first < i && coverageInKeyRead[foundBubbleEnd.first] == 1)
 		{
-			bubbleAlleles.emplace_back();
-			assignReadsToAlleles(context, localGraph.localToGlobal, bubbleAlleles.back(), localGraph.ambiguousEdges[std::make_pair(i, true)]);
+			alleles.emplace_back();
+			for (auto edge : localGraph.ambiguousEdges[std::make_pair(i, true)]) alleles.back().emplace_back(edge.first);
 		}
 		foundBubbleEnd = findSimpleBubbleEnd(localGraph.ambiguousEdges, std::make_pair(i, false));
 		if (foundBubbleEnd.first != std::numeric_limits<size_t>::max() && foundBubbleEnd.first < i && coverageInKeyRead[foundBubbleEnd.first] == 1)
 		{
-			bubbleAlleles.emplace_back();
-			assignReadsToAlleles(context, localGraph.localToGlobal, bubbleAlleles.back(), localGraph.ambiguousEdges[std::make_pair(i, false)]);
+			alleles.emplace_back();
+			for (auto edge : localGraph.ambiguousEdges[std::make_pair(i, false)]) alleles.back().emplace_back(edge.first);
 		}
 	}
-	phmap::flat_hash_set<size_t> forbiddenReads;
-	for (size_t i = 0; i < bubbleAlleles.size(); i++)
+	std::vector<std::vector<std::vector<size_t>>> alleleReadAssignments;
+	alleleReadAssignments.resize(alleles.size());
+	if (alleles.size() < 2)
 	{
-		if (bubbleAlleles[i][0].size() >= minAmbiguousCoverage) continue;
+		clearLocalGraph(localGraph);
+		return context;
+	}
+	assignReadsToAlleles(context, localGraph.localToGlobal, alleleReadAssignments, alleles);
+	phmap::flat_hash_set<size_t> forbiddenReads;
+	for (size_t i = 0; i < alleleReadAssignments.size(); i++)
+	{
+		if (alleleReadAssignments[i][0].size() >= minAmbiguousCoverage) continue;
 		for (size_t j = 0; j < i; j++)
 		{
-			if (bubbleAlleles[j][0].size() >= minAmbiguousCoverage) continue;
-			bool bubbleValidlyPhased = checkPhasingValidity(bubbleAlleles[i], bubbleAlleles[j], minAmbiguousCoverage, minSafeCoverage);
+			if (alleleReadAssignments[j][0].size() >= minAmbiguousCoverage) continue;
+			bool bubbleValidlyPhased = checkPhasingValidity(alleleReadAssignments[i], alleleReadAssignments[j], minAmbiguousCoverage, minSafeCoverage);
 			if (!bubbleValidlyPhased) continue;
-			forbidOtherHaplotypes(forbiddenReads, readIndex, bubbleAlleles[i], bubbleAlleles[j]);
+			forbidOtherHaplotypes(forbiddenReads, readIndex, alleleReadAssignments[i], alleleReadAssignments[j]);
 		}
 	}
 	assert(forbiddenReads.count(readIndex) == 0);
