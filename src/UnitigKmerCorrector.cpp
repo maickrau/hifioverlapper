@@ -69,13 +69,13 @@ void UnitigKmerCorrector::build(const ReadpartIterator& partIterator)
 		}
 		reads.emplace_back();
 		reads.back().name = read.readName.first;
-		std::tie(reads.back().leftClip, reads.back().rightClip, reads.back().unitigPath) = unitigs.getPath(hashes);
-		if (reads.back().unitigPath.size() == 0)
+		if (hashes.size() == 0)
 		{
 			reads.back().leftHanger = rawSeq;
 		}
 		else
 		{
+			std::tie(reads.back().leftClip, reads.back().rightClip, reads.back().unitigPath) = unitigs.getPath(hashes);
 			reads.back().leftHanger = rawSeq.substr(0, positions[0]);
 			reads.back().rightHanger = rawSeq.substr(positions.back() + kmerSize);
 		}
