@@ -4,7 +4,6 @@
 #include <concurrentqueue.h>
 #include "MatchIndex.h"
 #include "UnitigKmerCorrector.h"
-#include "/usr/local/include/valgrind/callgrind.h"
 
 template <typename F>
 void iterateCorrectedReads(const UnitigKmerCorrector& corrector, const MatchIndex& matchIndex, size_t numThreads, size_t minAmbiguousCoverage, size_t minSafeCoverage, F callback)
@@ -16,7 +15,6 @@ void iterateCorrectedReads(const UnitigKmerCorrector& corrector, const MatchInde
 	std::vector<bool> processed;
 	processed.resize(corrector.numReads(), false);
 	std::mutex processedMutex;
-	CALLGRIND_START_INSTRUMENTATION;
 	for (size_t i = 0; i < numThreads; i++)
 	{
 		threads.emplace_back([&readDone, &sequenceQueue, &processed, &processedMutex, &corrector, minAmbiguousCoverage, minSafeCoverage, callback]()
@@ -74,7 +72,6 @@ void iterateCorrectedReads(const UnitigKmerCorrector& corrector, const MatchInde
 	{
 		threads[i].join();
 	}
-	CALLGRIND_STOP_INSTRUMENTATION;
 	assert(sequenceQueue.size_approx() == 0);
 	for (size_t i = 0; i < processed.size(); i++)
 	{
