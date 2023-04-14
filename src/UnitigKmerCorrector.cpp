@@ -250,6 +250,7 @@ void UnitigKmerCorrector::filterOutHomopolymerOrMicrosatellitePaths(std::vector<
 	{
 		for (size_t j = 0; j < i; j++)
 		{
+			assert(paths[i] != paths[j]);
 			if (pathHomopolymerOrMicrosatelliteMatch(pathSequences[i], pathSequences[j]))
 			{
 				while (parent[parent[i]] != parent[i]) parent[i] = parent[parent[i]];
