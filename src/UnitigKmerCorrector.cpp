@@ -132,12 +132,46 @@ std::vector<std::vector<std::pair<size_t, bool>>> UnitigKmerCorrector::getPossib
 	return result;
 }
 
+bool isMultiCopyIndel(const std::string indelSequence)
+{
+	if (indelSequence.size() >= 2)
+	{
+		bool isLongHomopolymer = true;
+		for (size_t i = 1; i < indelSequence.size(); i++)
+		{
+			if (indelSequence[i] != indelSequence[0]) isLongHomopolymer = false;
+		}
+		if (isLongHomopolymer) return true;
+	}
+	for (size_t i = 2; i < 5; i++)
+	{
+		if (indelSequence.size() < i*2) return false;
+		if (indelSequence.size() % i != 0) continue;
+		bool isLongMicrosatellite = true;
+		for (size_t j = 1; j < indelSequence.size() / i; i++)
+		{
+			for (size_t k = 0; k < i; k++)
+			{
+				if (indelSequence[k] != indelSequence[j*i+k])
+				{
+					isLongMicrosatellite = false;
+					break;
+				}
+			}
+			if (!isLongMicrosatellite) break;
+		}
+		if (isLongMicrosatellite) return true;
+	}
+	return false;
+}
+
 bool UnitigKmerCorrector::pathHomopolymerOrMicrosatelliteMatch(const std::string& path1, const std::string& path2) const
 {
 	if (path1.size() > path2.size() + 10) return false;
 	if (path2.size() > path1.size() + 10) return false;
 	size_t leftClip = 0;
 	size_t rightClip = 0;
+	assert(path1 != path2);
 	while (leftClip < path1.size() && leftClip < path2.size() && path1[leftClip] == path2[leftClip]) leftClip += 1;
 	while (leftClip+rightClip < path1.size() && leftClip+rightClip < path2.size() && path1[path1.size()-1-rightClip] == path2[path2.size()-1-rightClip]) rightClip += 1;
 	if (leftClip + rightClip < path1.size() && leftClip + rightClip < path2.size()) return false;
@@ -150,6 +184,7 @@ bool UnitigKmerCorrector::pathHomopolymerOrMicrosatelliteMatch(const std::string
 		if (indelSize > 10) return false;
 		std::string indelSequence = path1.substr(leftClip, indelSize);
 		assert(indelSequence.size() == indelSize);
+		if (isMultiCopyIndel(indelSequence)) return false;
 		if (leftClip >= indelSize && path1.substr(leftClip - indelSize, indelSize) == indelSequence) return true;
 		if (rightClip >= indelSize && path1.substr(leftClip + indelSize, indelSize) == indelSequence) return true;
 		return false;
@@ -162,6 +197,7 @@ bool UnitigKmerCorrector::pathHomopolymerOrMicrosatelliteMatch(const std::string
 		if (indelSize > 10) return false;
 		std::string indelSequence = path2.substr(leftClip, indelSize);
 		assert(indelSequence.size() == indelSize);
+		if (isMultiCopyIndel(indelSequence)) return false;
 		if (leftClip >= indelSize && path2.substr(leftClip - indelSize, indelSize) == indelSequence) return true;
 		if (rightClip >= indelSize && path2.substr(leftClip + indelSize, indelSize) == indelSequence) return true;
 		return false;
