@@ -380,12 +380,12 @@ void UnitigKmerCorrector::assignLocalGraph(LocalGraph& result, const std::vector
 		if (pair.second >= minSafeCoverage)
 		{
 			result.safeEdges[pair.first.first].emplace_back(pair.first.second);
-			result.safeEdges[reverse(pair.first.second)].emplace_back(reverse(pair.first.first));
+			if (reverse(pair.first.second) != pair.first.first || reverse(pair.first.first) != pair.first.second) result.safeEdges[reverse(pair.first.second)].emplace_back(reverse(pair.first.first));
 		}
 		if (pair.second >= minAmbiguousCoverage)
 		{
 			result.ambiguousEdges[pair.first.first].emplace_back(pair.first.second);
-			result.ambiguousEdges[reverse(pair.first.second)].emplace_back(reverse(pair.first.first));
+			if (reverse(pair.first.second) != pair.first.first || reverse(pair.first.first) != pair.first.second) result.ambiguousEdges[reverse(pair.first.second)].emplace_back(reverse(pair.first.first));
 		}
 	}
 }
