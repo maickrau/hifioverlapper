@@ -2,6 +2,7 @@
 #include <atomic>
 #include <iostream>
 #include <concurrentqueue.h>
+#include <cxxopts.hpp>
 #include "MatchIndex.h"
 #include "UnitigKmerCorrector.h"
 
@@ -93,20 +94,74 @@ MatchIndex buildMatchIndex(const UnitigKmerCorrector& corrector, size_t searchk,
 
 int main(int argc, char** argv)
 {
-	size_t numThreads = std::stoi(argv[1]);
-	size_t searchk = std::stoull(argv[2]);
-	size_t numWindows = std::stoull(argv[3]);
-	size_t searchwindowSize = std::stoull(argv[4]);
-	size_t correctk = std::stoull(argv[5]);
-	std::vector<std::string> readFiles;
-	for (size_t i = 6; i < argc; i++)
+	cxxopts::Options options { "ribotin-ref" };
+	options.add_options()
+		("h,help", "Print help")
+		("v,version", "Print version")
+		("i,in", "Input reads. Multiple files can be input with -i file1.fa -i file2.fa etc (required)", cxxopts::value<std::vector<std::string>>())
+		("searchk", "Read matching k", cxxopts::value<size_t>()->default_value("201"))
+		("searchw", "Read matching window size", cxxopts::value<size_t>()->default_value("500"))
+		("searchn", "Read matching window count", cxxopts::value<size_t>()->default_value("4"))
+		("correctk", "Read correction k", cxxopts::value<size_t>()->default_value("101"))
+		("correctw", "Read correction window size (default correctk/2)", cxxopts::value<size_t>())
+		("solidcov", "Solid k-mer coverage threshold", cxxopts::value<size_t>()->default_value("5"))
+		("ambiguouscov", "Ambiguous k-mer coverage threshold", cxxopts::value<size_t>()->default_value("3"))
+		("t", "Number of threads (default 1)", cxxopts::value<size_t>()->default_value("1"))
+	;
+	auto params = options.parse(argc, argv);
+	if (params.count("v") == 1)
 	{
-		readFiles.emplace_back(argv[i]);
+		std::cerr << "Version: " << VERSION << std::endl;
+		std::exit(0);
 	}
-	size_t correctwindowSize = correctk/2;
-	size_t minSafeCoverage = 5;
-	size_t minAmbiguousCoverage = 3;
-	ReadpartIterator partIterator { correctk, correctwindowSize, ErrorMasking::No, numThreads, readFiles, false, "" };
+	if (params.count("h") == 1)
+	{
+		std::cerr << options.help() << std::endl;
+		std::exit(0);
+	}
+	bool paramError = false;
+	if (params.count("i") == 0)
+	{
+		std::cerr << "Input reads (-i) are required" << std::endl;
+		paramError = true;
+	}
+	if (params["searchk"].as<size_t>() % 2 == 0)
+	{
+		std::cerr << "Read matching k must be odd" << std::endl;
+		paramError = true;
+	}
+	if (params["correctk"].as<size_t>() % 2 == 0)
+	{
+		std::cerr << "Read matching k must be odd" << std::endl;
+		paramError = true;
+	}
+	if (params["ambiguouscov"].as<size_t>() > params["solidcov"].as<size_t>())
+	{
+		std::cerr << "Ambiguous coverage threshold can't be higher than solid coverage threshold" << std::endl;
+		paramError = true;
+	}
+	if (paramError)
+	{
+		std::abort();
+	}
+	size_t numThreads = params["t"].as<size_t>();
+	size_t searchk = params["searchk"].as<size_t>();
+	size_t numWindows = params["searchn"].as<size_t>();
+	size_t searchwindowSize = params["searchw"].as<size_t>();
+	size_t correctk = params["correctk"].as<size_t>();
+	size_t correctw;
+	if (params.count("correctw") == 1)
+	{
+		correctw = params["correctw"].as<size_t>();
+	}
+	else
+	{
+		correctw = correctk/2;
+	}
+	std::vector<std::string> readFiles = params["i"].as<std::vector<std::string>>();
+	size_t minSafeCoverage = params["solidcov"].as<size_t>();
+	size_t minAmbiguousCoverage = params["ambiguouscov"].as<size_t>();
+	ReadpartIterator partIterator { correctk, correctw, ErrorMasking::No, numThreads, readFiles, false, "" };
 	UnitigKmerCorrector corrector { correctk };
 	corrector.build(partIterator);
 	std::cerr << "build match index" << std::endl;
