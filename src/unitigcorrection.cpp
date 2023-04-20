@@ -99,6 +99,7 @@ int main(int argc, char** argv)
 		("h,help", "Print help")
 		("v,version", "Print version")
 		("i,in", "Input reads. Multiple files can be input with -i file1.fa -i file2.fa etc (required)", cxxopts::value<std::vector<std::string>>())
+		("hpc", "Collapse homopolymers in input reads")
 		("searchk", "Read matching k", cxxopts::value<size_t>()->default_value("201"))
 		("searchw", "Read matching window size", cxxopts::value<size_t>()->default_value("500"))
 		("searchn", "Read matching window count", cxxopts::value<size_t>()->default_value("4"))
@@ -161,7 +162,9 @@ int main(int argc, char** argv)
 	std::vector<std::string> readFiles = params["i"].as<std::vector<std::string>>();
 	size_t minSafeCoverage = params["solidcov"].as<size_t>();
 	size_t minAmbiguousCoverage = params["ambiguouscov"].as<size_t>();
-	ReadpartIterator partIterator { correctk, correctw, ErrorMasking::No, numThreads, readFiles, false, "" };
+	ErrorMasking masking = ErrorMasking::No;
+	if (params.count("hpc") == 1) masking = ErrorMasking::Collapse;
+	ReadpartIterator partIterator { correctk, correctw, masking, numThreads, readFiles, false, "" };
 	UnitigKmerCorrector corrector { correctk };
 	corrector.build(partIterator);
 	std::cerr << "build match index" << std::endl;
