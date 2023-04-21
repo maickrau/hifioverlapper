@@ -7,10 +7,10 @@ SRCDIR=src
 
 LIBS=`pkg-config --libs zlib`
 
-_DEPS = MatchIndex.h MinimizerIterator.h ReadStorage.h
+_DEPS = MatchIndex.h MinimizerIterator.h ReadStorage.h KmerCorrector.h TwobitString.h UnitigKmerCorrector.h UnitigStorage.h
 DEPS = $(patsubst %, $(SRCDIR)/%, $(_DEPS))
 
-_OBJ = MatchIndex.o MinimizerIterator.o ReadStorage.o
+_OBJ = MatchIndex.o MinimizerIterator.o ReadStorage.o KmerCorrector.o TwobitString.o UnitigKmerCorrector.o UnitigStorage.o
 OBJ = $(patsubst %, $(ODIR)/%, $(_OBJ))
 
 LINKFLAGS = $(CPPFLAGS) -Wl,-Bstatic $(LIBS) -Wl,-Bdynamic -Wl,--as-needed -lpthread -pthread -static-libstdc++
@@ -26,13 +26,43 @@ $(BINDIR)/matchchains: $(OBJ) $(ODIR)/matchchains.o MBG/lib/mbg.a
 $(ODIR)/matchchains.o: $(SRCDIR)/matchchains.cpp $(DEPS) $(OBJ)
 	$(GPP) -c -o $@ $< $(CPPFLAGS) -DVERSION="\"$(VERSION)\""
 
+$(BINDIR)/localcorrection: $(OBJ) $(ODIR)/localcorrection.o MBG/lib/mbg.a
+	$(GPP) -o $@ $^ $(LINKFLAGS)
+
+$(ODIR)/localcorrection.o: $(SRCDIR)/localcorrection.cpp $(DEPS) $(OBJ)
+	$(GPP) -c -o $@ $< $(CPPFLAGS) -DVERSION="\"$(VERSION)\""
+
+$(BINDIR)/dbgcorrection: $(OBJ) $(ODIR)/dbgcorrection.o MBG/lib/mbg.a
+	$(GPP) -o $@ $^ $(LINKFLAGS)
+
+$(ODIR)/dbgcorrection.o: $(SRCDIR)/dbgcorrection.cpp $(DEPS) $(OBJ)
+	$(GPP) -c -o $@ $< $(CPPFLAGS) -DVERSION="\"$(VERSION)\""
+
+$(BINDIR)/kmercorrection: $(OBJ) $(ODIR)/kmercorrection.o MBG/lib/mbg.a
+	$(GPP) -o $@ $^ $(LINKFLAGS)
+
+$(ODIR)/kmercorrection.o: $(SRCDIR)/kmercorrection.cpp $(DEPS) $(OBJ)
+	$(GPP) -c -o $@ $< $(CPPFLAGS) -DVERSION="\"$(VERSION)\""
+
+$(BINDIR)/unitigcorrection: $(OBJ) $(ODIR)/unitigcorrection.o MBG/lib/mbg.a
+	$(GPP) -o $@ $^ $(LINKFLAGS)
+
+$(ODIR)/unitigcorrection.o: $(SRCDIR)/unitigcorrection.cpp $(DEPS) $(OBJ)
+	$(GPP) -c -o $@ $< $(CPPFLAGS) -DVERSION="\"$(VERSION)\""
+
+$(BINDIR)/haplofilter: $(OBJ) $(ODIR)/haplofilter.o MBG/lib/mbg.a
+	$(GPP) -o $@ $^ $(LINKFLAGS)
+
+$(ODIR)/haplofilter.o: $(SRCDIR)/haplofilter.cpp $(DEPS) $(OBJ)
+	$(GPP) -c -o $@ $< $(CPPFLAGS) -DVERSION="\"$(VERSION)\""
+
 $(ODIR)/%.o: $(SRCDIR)/%.cpp $(DEPS)
 	$(GPP) -c -o $@ $< $(CPPFLAGS)
 
 MBG/lib/mbg.a:
 	$(MAKE) -C MBG lib
 
-all: $(BINDIR)/matchchains
+all: $(BINDIR)/matchchains $(BINDIR)/haplofilter $(BINDIR)/dbgcorrection $(BINDIR)/kmercorrection $(BINDIR)/localcorrection $(BINDIR)/unitigcorrection
 
 clean:
 	rm -f $(ODIR)/*

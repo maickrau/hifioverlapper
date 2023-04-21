@@ -21,7 +21,7 @@ int main(int argc, char** argv)
 	for (auto file : readFiles)
 	{
 		std::mutex indexMutex;
-		storage.iterateReadsFromFile(file, numThreads, [&matchIndex, &indexMutex](size_t readName, const std::string& sequence)
+		storage.iterateReadsFromFile(file, numThreads, false, [&matchIndex, &indexMutex](size_t readName, const std::string& sequence)
 		{
 			matchIndex.addMatchesFromRead(readName, indexMutex, sequence);
 		});
