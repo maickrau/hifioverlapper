@@ -32,6 +32,10 @@ std::pair<size_t, bool> findSimpleBubbleEnd(const VectorWithDirection<std::vecto
 		else if (pos != bubbleEnd) return std::make_pair(std::numeric_limits<size_t>::max(), true);
 	}
 	if (edges[reverse(bubbleEnd)].size() != edges[startNode].size()) return std::make_pair(std::numeric_limits<size_t>::max(), true);
+	for (auto edge : edges[reverse(bubbleEnd)])
+	{
+		if (usedAlleles.count(edge.first) == 0) return std::make_pair(std::numeric_limits<size_t>::max(), true);
+	}
 	if (bubbleEnd.first == startNode.first) return std::make_pair(std::numeric_limits<size_t>::max(), true);
 	return bubbleEnd;
 }
