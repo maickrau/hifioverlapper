@@ -12,7 +12,7 @@ class MinimizerIterator
 public:
 	MinimizerIterator() = default;
 	MinimizerIterator(size_t k);
-	void init(const SequenceCharType& start);
+	void init(const SequenceCharType& start, size_t posOffset);
 	void moveChar(uint16_t added, uint16_t removed);
 	size_t minimizerPosition() const;
 	uint64_t minimizerHash() const;
@@ -33,7 +33,7 @@ void iterateWindowchunks(const SequenceCharType& seq, size_t k, size_t numWindow
 	{
 		windowIterators.emplace_back(k);
 		SequenceCharType startWindow { seq.begin() + i * windowSize, seq.begin() + (i+1) * windowSize + k };
-		windowIterators[i].init(startWindow);
+		windowIterators[i].init(startWindow, i * windowSize);
 	}
 	std::vector<uint64_t> hashesHere;
 	hashesHere.resize(numWindows);
@@ -41,7 +41,7 @@ void iterateWindowchunks(const SequenceCharType& seq, size_t k, size_t numWindow
 	{
 		hashesHere[i] = windowIterators[i].minimizerHash();
 	}
-	callback(hashesHere, 0);
+	callback(hashesHere, windowIterators[0].minimizerPosition(), windowIterators.back().minimizerPosition()+k-1);
 	for (size_t i = 0; i + numWindows * windowSize + k < seq.size(); i++)
 	{
 		bool changed = false;
@@ -56,7 +56,7 @@ void iterateWindowchunks(const SequenceCharType& seq, size_t k, size_t numWindow
 		}
 		if (changed)
 		{
-			callback(hashesHere, i+1);
+			callback(hashesHere, windowIterators[0].minimizerPosition(), windowIterators.back().minimizerPosition()+k-1);
 		}
 	}
 }

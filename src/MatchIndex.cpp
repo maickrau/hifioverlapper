@@ -4,20 +4,20 @@
 #include "MinimizerIterator.h"
 #include "ReadHelper.h"
 
-void ReadIdContainer::addNumber(uint64_t key, uint64_t value)
+void ReadIdContainer::addNumber(uint64_t key, __uint128_t value)
 {
-	assert(value < std::numeric_limits<uint64_t>::max()/2);
+	assert(value < FirstBit);
 	auto found = firstNumberOrVectorIndex.find(key);
 	if (found == firstNumberOrVectorIndex.end())
 	{
-		firstNumberOrVectorIndex[key] = 0x8000000000000000ull + value;
+		firstNumberOrVectorIndex[key] = FirstBit + value;
 		return;
 	}
 	else
 	{
-		if (found->second & 0x8000000000000000ull)
+		if (found->second & FirstBit)
 		{
-			size_t oldNumber = found->second - 0x8000000000000000ull;
+			__uint128_t oldNumber = found->second - FirstBit;
 			size_t index = numbers.size();
 			numbers.emplace_back();
 			firstNumberOrVectorIndex[key] = index;
@@ -31,7 +31,7 @@ void ReadIdContainer::addNumber(uint64_t key, uint64_t value)
 	}
 }
 
-const std::vector<std::vector<uint64_t>>& ReadIdContainer::getMultiNumbers() const
+const std::vector<std::vector<__uint128_t>>& ReadIdContainer::getMultiNumbers() const
 {
 	return numbers;
 }
@@ -49,67 +49,59 @@ MatchIndex::MatchIndex(size_t k, size_t numWindows, size_t windowSize) :
 {
 }
 
-void MatchIndex::addMatch(uint64_t hash, uint64_t readKey)
+void MatchIndex::addMatch(uint64_t hash, __uint128_t readKey)
 {
 	idContainer.addNumber(hash, readKey);
 }
 
 void MatchIndex::addMatchesFromRead(uint32_t readKey, std::mutex& indexMutex, const std::string& readSequence)
 {
+	addMatchesFromReadOneWay(readKey, indexMutex, readSequence, true);
+	auto rev = revCompRaw(readSequence);
+	addMatchesFromReadOneWay(readKey, indexMutex, rev, false);
+}
+
+void MatchIndex::addMatchesFromReadOneWay(uint32_t readKey, std::mutex& indexMutex, const std::string& readSequence, bool fw)
+{
 	if (numReads <= readKey) numReads = readKey+1;
-	ErrorMasking errorMasking = ErrorMasking::CollapseMicrosatellite;
+	ErrorMasking errorMasking = ErrorMasking::Microsatellite;
 	std::vector<std::string> readFiles { };
 	ReadpartIterator partIterator { 31, 1, errorMasking, 1, readFiles, false, "" };
-	partIterator.iteratePartsOfRead("", readSequence, [this, &indexMutex, readKey](const ReadInfo& read, const SequenceCharType& seq, const SequenceLengthType& poses, const std::string& raw)
+	partIterator.iteratePartsOfRead("", readSequence, [this, &indexMutex, readKey, fw](const ReadInfo& read, const SequenceCharType& seq, const SequenceLengthType& poses, const std::string& raw)
 	{
 		if (seq.size() < numWindows * windowSize + k) return;
-		phmap::flat_hash_set<std::pair<size_t, uint32_t>> hashesHere;
+		phmap::flat_hash_set<std::tuple<uint64_t, uint32_t, uint32_t>> hashesHere;
 		size_t rawReadLength = raw.size();
 		size_t compressedReadLength = seq.size();
-		iterateWindowchunks(seq, k, numWindows, windowSize, [this, &hashesHere, rawReadLength, compressedReadLength](const std::vector<uint64_t>& hashes, const size_t startPos)
+		iterateWindowchunks(seq, k, numWindows, windowSize, [this, &hashesHere, &poses, rawReadLength, compressedReadLength, fw](const std::vector<uint64_t>& hashes, const size_t startPos, const size_t endPos)
 		{
-			bool fw = true;
-			for (size_t i = 0; i < hashes.size()/2; i++)
+			uint64_t totalhash = 0;
+			for (auto hash : hashes)
 			{
-				if (hashes[i] > hashes[hashes.size()-1-i]) break;
-				if (hashes[i] < hashes[hashes.size()-1-i])
-				{
-					fw = false;
-					break;
-				}
+				totalhash *= 3;
+				totalhash += hash;
 			}
-			size_t totalhash = 0;
-			if (fw)
-			{
-				for (auto hash : hashes)
-				{
-					totalhash += hash;
-					totalhash *= 3;
-				}
-			}
-			else
-			{
-				for (size_t i = hashes.size()-1; i < hashes.size(); i--)
-				{
-					totalhash += hashes[i];
-					totalhash *= 3;
-				}
-			}
-			uint32_t approxPosition = (double)startPos / (double)compressedReadLength * (double)rawReadLength;
-			assert(approxPosition <= rawReadLength);
+			assert(endPos > startPos);
+			assert(startPos < poses.size());
+			assert(endPos < poses.size());
+			assert(endPos+1 < poses.size());
+			uint32_t realStartPos = poses[startPos];
+			uint32_t realEndPos = poses[endPos+1]-1;
+			assert(realEndPos > realStartPos);
+			assert((realEndPos & 0x7FFFFFFF) < rawReadLength);
+			assert(realStartPos < 0x80000000);
+			assert(realEndPos < 0x80000000);
 			if (!fw)
 			{
-				assert((startPos + numWindows * windowSize) <= compressedReadLength);
-				approxPosition = (double)(compressedReadLength - (startPos + numWindows * windowSize)) / (double)compressedReadLength * (double)rawReadLength;
-				assert(approxPosition <= rawReadLength);
-				approxPosition += 0x80000000;
+				realStartPos += 0x80000000;
+				realEndPos += 0x80000000;
 			}
-			hashesHere.emplace(totalhash, approxPosition);
+			hashesHere.emplace(totalhash, realStartPos, realEndPos);
 		});
 		std::lock_guard<std::mutex> guard { indexMutex };
-		for (auto hash : hashesHere)
+		for (auto t : hashesHere)
 		{
-			addMatch(hash.first, ((uint64_t)readKey << 32ull) + hash.second);
+			addMatch(std::get<0>(t), ((__uint128_t)readKey << (__uint128_t)64) + ((__uint128_t)std::get<1>(t) << (__uint128_t)32) + (__uint128_t)std::get<2>(t));
 		}
 	});
 }
