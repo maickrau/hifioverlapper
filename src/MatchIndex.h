@@ -16,6 +16,7 @@ public:
 	void addNumber(uint64_t key, __uint128_t value);
 	const std::vector<std::vector<__uint128_t>>& getMultiNumbers() const;
 	size_t size() const;
+	size_t multinumberSize() const;
 private:
 	static constexpr __uint128_t FirstBit = (__uint128_t)1 << (__uint128_t)127;
 	phmap::flat_hash_map<uint64_t, __uint128_t> firstNumberOrVectorIndex;
@@ -240,6 +241,24 @@ public:
 			callback(names[left], leftStart, leftEnd, leftFw, names[right], rightStart, rightEnd, rightFw);
 		});
 	}
+	template <typename F>
+	void iterateReadMultinumberMatches(size_t minCoverage, F callback) const
+	{
+		const auto& numbers = idContainer.getMultiNumbers();
+		for (size_t i = 0; i < numbers.size(); i++)
+		{
+			if (numbers[i].size() < minCoverage) continue;
+			for (__uint128_t readkey : numbers[i])
+			{
+				uint32_t readname = readkey >> (__uint128_t)64;
+				uint32_t readStartPos = readkey >> (__uint128_t)32;
+				uint32_t readEndPos = readkey;
+				callback(i, readname, readStartPos, readEndPos);
+			}
+		}
+	}
+	size_t multinumberSize() const;
+	size_t multinumberReadCount(size_t index) const;
 private:
 	void addMatchesFromReadOneWay(uint32_t readKey, std::mutex& indexMutex, const std::string& readSequence, bool fw);
 	size_t k;

@@ -32,13 +32,19 @@ $(BINDIR)/unitigcorrection: $(OBJ) $(ODIR)/unitigcorrection.o MBG/lib/mbg.a
 $(ODIR)/unitigcorrection.o: $(SRCDIR)/unitigcorrection.cpp $(DEPS) $(OBJ)
 	$(GPP) -c -o $@ $< $(CPPFLAGS) -DVERSION="\"$(VERSION)\""
 
+$(BINDIR)/graphbuilder: $(OBJ) $(ODIR)/graphbuilder.o MBG/lib/mbg.a
+	$(GPP) -o $@ $^ $(LINKFLAGS)
+
+$(ODIR)/graphbuilder.o: $(SRCDIR)/graphbuilder.cpp $(DEPS) $(OBJ)
+	$(GPP) -c -o $@ $< $(CPPFLAGS) -DVERSION="\"$(VERSION)\""
+
 $(ODIR)/%.o: $(SRCDIR)/%.cpp $(DEPS)
 	$(GPP) -c -o $@ $< $(CPPFLAGS)
 
 MBG/lib/mbg.a:
 	$(MAKE) -C MBG lib
 
-all: $(BINDIR)/matchchains $(BINDIR)/unitigcorrection
+all: $(BINDIR)/matchchains $(BINDIR)/unitigcorrection $(BINDIR)/graphbuilder
 
 clean:
 	rm -f $(ODIR)/*

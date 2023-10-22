@@ -41,6 +41,11 @@ size_t ReadIdContainer::size() const
 	return firstNumberOrVectorIndex.size();
 }
 
+size_t ReadIdContainer::multinumberSize() const
+{
+	return numbers.size();
+}
+
 MatchIndex::MatchIndex(size_t k, size_t numWindows, size_t windowSize) :
 	k(k),
 	numWindows(numWindows),
@@ -104,4 +109,14 @@ void MatchIndex::addMatchesFromReadOneWay(uint32_t readKey, std::mutex& indexMut
 			addMatch(std::get<0>(t), ((__uint128_t)readKey << (__uint128_t)64) + ((__uint128_t)std::get<1>(t) << (__uint128_t)32) + (__uint128_t)std::get<2>(t));
 		}
 	});
+}
+
+size_t MatchIndex::multinumberSize() const
+{
+	return idContainer.multinumberSize();
+}
+
+size_t MatchIndex::multinumberReadCount(size_t index) const
+{
+	return idContainer.getMultiNumbers()[index].size();
 }
