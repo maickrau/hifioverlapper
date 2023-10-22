@@ -8,6 +8,8 @@
 #include <tuple>
 #include <unordered_set>
 #include <phmap.h>
+#include "ReadHelper.h"
+#include "MinimizerIterator.h"
 
 class ReadIdContainer
 {
@@ -256,6 +258,35 @@ public:
 				callback(i, readname, readStartPos, readEndPos);
 			}
 		}
+	}
+	template <typename F>
+	void iterateHashesFromRead(const std::string& readSequence, F callback) const
+	{
+		ErrorMasking errorMasking = ErrorMasking::Microsatellite;
+		std::vector<std::string> readFiles { };
+		ReadpartIterator partIterator { 31, 1, errorMasking, 1, readFiles, false, "" };
+		partIterator.iteratePartsOfRead("", readSequence, [this, callback](const ReadInfo& read, const SequenceCharType& seq, const SequenceLengthType& poses, const std::string& raw)
+		{
+			if (seq.size() < numWindows * windowSize + k) return;
+			iterateWindowchunks(seq, k, numWindows, windowSize, [this, callback, &poses](const std::vector<uint64_t>& hashes, const size_t startPos, const size_t endPos)
+			{
+				uint64_t totalhash = 0;
+				for (auto hash : hashes)
+				{
+					totalhash *= 3;
+					totalhash += hash;
+				}
+				assert(endPos > startPos);
+				assert(startPos < poses.size());
+				assert(endPos < poses.size());
+				assert(endPos+1 < poses.size());
+				uint32_t realStartPos = poses[startPos];
+				uint32_t realEndPos = poses[endPos+1]-1;
+				assert(realEndPos > realStartPos);
+				assert((realEndPos & 0x7FFFFFFF) < poses.back());
+				callback(totalhash, realStartPos, realEndPos);
+			});
+		});
 	}
 	size_t multinumberSize() const;
 	size_t multinumberReadCount(size_t index) const;

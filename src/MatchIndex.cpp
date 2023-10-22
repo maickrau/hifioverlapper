@@ -69,46 +69,22 @@ void MatchIndex::addMatchesFromRead(uint32_t readKey, std::mutex& indexMutex, co
 void MatchIndex::addMatchesFromReadOneWay(uint32_t readKey, std::mutex& indexMutex, const std::string& readSequence, bool fw)
 {
 	if (numReads <= readKey) numReads = readKey+1;
-	ErrorMasking errorMasking = ErrorMasking::Microsatellite;
-	std::vector<std::string> readFiles { };
-	ReadpartIterator partIterator { 31, 1, errorMasking, 1, readFiles, false, "" };
-	partIterator.iteratePartsOfRead("", readSequence, [this, &indexMutex, readKey, fw](const ReadInfo& read, const SequenceCharType& seq, const SequenceLengthType& poses, const std::string& raw)
+	phmap::flat_hash_set<std::tuple<uint64_t, uint32_t, uint32_t>> hashesHere;
+	iterateHashesFromRead(readSequence, [readKey, &indexMutex, fw, &hashesHere](uint64_t hash, size_t start, size_t end)
 	{
-		if (seq.size() < numWindows * windowSize + k) return;
-		phmap::flat_hash_set<std::tuple<uint64_t, uint32_t, uint32_t>> hashesHere;
-		size_t rawReadLength = raw.size();
-		size_t compressedReadLength = seq.size();
-		iterateWindowchunks(seq, k, numWindows, windowSize, [this, &hashesHere, &poses, rawReadLength, compressedReadLength, fw](const std::vector<uint64_t>& hashes, const size_t startPos, const size_t endPos)
+		assert(end < 0x80000000);
+		if (!fw)
 		{
-			uint64_t totalhash = 0;
-			for (auto hash : hashes)
-			{
-				totalhash *= 3;
-				totalhash += hash;
-			}
-			assert(endPos > startPos);
-			assert(startPos < poses.size());
-			assert(endPos < poses.size());
-			assert(endPos+1 < poses.size());
-			uint32_t realStartPos = poses[startPos];
-			uint32_t realEndPos = poses[endPos+1]-1;
-			assert(realEndPos > realStartPos);
-			assert((realEndPos & 0x7FFFFFFF) < rawReadLength);
-			assert(realStartPos < 0x80000000);
-			assert(realEndPos < 0x80000000);
-			if (!fw)
-			{
-				realStartPos += 0x80000000;
-				realEndPos += 0x80000000;
-			}
-			hashesHere.emplace(totalhash, realStartPos, realEndPos);
-		});
-		std::lock_guard<std::mutex> guard { indexMutex };
-		for (auto t : hashesHere)
-		{
-			addMatch(std::get<0>(t), ((__uint128_t)readKey << (__uint128_t)64) + ((__uint128_t)std::get<1>(t) << (__uint128_t)32) + (__uint128_t)std::get<2>(t));
+			start += 0x80000000;
+			end += 0x80000000;
 		}
+		hashesHere.emplace(hash, start, end);
 	});
+	std::lock_guard<std::mutex> guard { indexMutex };
+	for (auto t : hashesHere)
+	{
+		addMatch(std::get<0>(t), ((__uint128_t)readKey << (__uint128_t)64) + ((__uint128_t)std::get<1>(t) << (__uint128_t)32) + (__uint128_t)std::get<2>(t));
+	}
 }
 
 size_t MatchIndex::multinumberSize() const
