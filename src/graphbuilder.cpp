@@ -153,14 +153,14 @@ uint64_t find(phmap::flat_hash_map<uint64_t, uint64_t>& parent, uint64_t key)
 {
 	if (parent.count(key) == 0)
 	{
-		parent[key] = key;
 		return key;
 	}
+	uint64_t original = key;
 	while (parent.count(key) == 1 && parent.at(key) != key)
 	{
 		key = parent.at(key);
 	}
-	parent[key] = key;
+	parent[original] = key;
 	return key;
 }
 
@@ -168,8 +168,8 @@ void merge(phmap::flat_hash_map<uint64_t, uint64_t>& parent, uint64_t left, uint
 {
 	left = find(parent, left);
 	right = find(parent, right);
-	assert(parent.at(left) == left);
-	assert(parent.at(right) == right);
+	assert(parent.count(left) == 0 || parent.at(left) == left);
+	assert(parent.count(right) == 0 || parent.at(right) == right);
 	parent[right] = left;
 }
 
