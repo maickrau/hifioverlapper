@@ -250,9 +250,9 @@ public:
 	template <typename F>
 	IterationInfo iterateMatchNames(const size_t numThreads, const std::vector<std::string>& names, const std::vector<size_t>& rawReadLengths, F callback) const
 	{
-		return iterateMatchChains(numThreads, [&names, callback](size_t left, size_t leftStart, size_t leftEnd, bool leftFw, size_t right, size_t rightStart, size_t rightEnd, bool rightFw)
+		return iterateMatchChains(numThreads, [&names, &rawReadLengths, callback](size_t left, size_t leftStart, size_t leftEnd, bool leftFw, size_t right, size_t rightStart, size_t rightEnd, bool rightFw)
 		{
-			callback(names[left], leftStart, leftEnd, leftFw, names[right], rightStart, rightEnd, rightFw);
+			callback(names[left], rawReadLengths[left], leftStart, leftEnd, leftFw, names[right], rawReadLengths[right], rightStart, rightEnd, rightFw);
 		});
 	}
 private:
