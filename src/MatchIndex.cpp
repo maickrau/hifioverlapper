@@ -41,6 +41,17 @@ size_t ReadIdContainer::size() const
 	return firstNumberOrVectorIndex.size();
 }
 
+Match::Match(size_t leftStartPos, size_t leftEndPos, bool leftFw, size_t rightStartPos, size_t rightEndPos, bool rightFw) :
+	leftStartPos(leftStartPos),
+	leftEndPos(leftEndPos),
+	leftFw(leftFw),
+	rightStartPos(rightStartPos),
+	rightEndPos(rightEndPos),
+	rightFw(rightFw)
+{
+}
+
+
 MatchIndex::MatchIndex(size_t k, size_t numWindows, size_t windowSize) :
 	k(k),
 	numWindows(numWindows),

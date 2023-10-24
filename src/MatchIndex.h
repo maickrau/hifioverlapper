@@ -6,6 +6,7 @@
 #include <vector>
 #include <mutex>
 #include <tuple>
+#include <thread>
 #include <unordered_set>
 #include <phmap.h>
 
@@ -37,6 +38,19 @@ public:
 	size_t readChainMatches;
 };
 
+class Match
+{
+public:
+	Match() = default;
+	Match(size_t leftStartPos, size_t leftEndPos, bool leftFw, size_t rightStartPos, size_t rightEndPos, bool rightFw);
+	size_t leftStartPos;
+	size_t leftEndPos;
+	size_t rightStartPos;
+	size_t rightEndPos;
+	bool leftFw;
+	bool rightFw;
+};
+
 class MatchIndex
 {
 public:
@@ -44,7 +58,7 @@ public:
 	void addMatch(uint64_t hash, __uint128_t readKey);
 	void addMatchesFromRead(uint32_t readKey, std::mutex& indexMutex, const std::string& readSequence);
 	template <typename F>
-	IterationInfo iterateMatches(bool alsoSmaller, F callback) const
+	IterationInfo iterateMatches(const size_t numThreads, bool alsoSmaller, F callback) const
 	{
 		IterationInfo result;
 		result.numberReads = numReads;
@@ -72,47 +86,60 @@ public:
 		size_t readsWithMatch = 0;
 		size_t totalMatches = 0;
 		size_t readPairMatches = 0;
-		for (size_t i = 0; i < hashesPerRead.size(); i++)
+		std::vector<std::thread> threads;
+		size_t nextReadIndex = 0;
+		std::mutex readIndexMutex;
+		for (size_t threadi = 0; threadi < numThreads; threadi++)
 		{
-			std::vector<std::tuple<uint32_t, uint32_t, uint32_t, uint32_t, uint32_t>> matches;
-			for (std::tuple<uint32_t, uint32_t, uint32_t> t : hashesPerRead[i])
+			threads.emplace_back([this, &nextReadIndex, &readIndexMutex, &hashesPerRead, &readPairMatches, &totalMatches, &readsWithMatch, &numbers, alsoSmaller, callback]()
 			{
-				uint32_t hash = std::get<0>(t);
-				uint32_t startpos = std::get<1>(t);
-				uint32_t endpos = std::get<2>(t);
-				for (__uint128_t readkey : numbers[hash])
+				size_t totalMatchesThisThread = 0;
+				size_t readsWithMatchThisThread = 0;
+				size_t readPairMatchesThisThread = 0;
+				while (true)
 				{
-					uint32_t read = readkey >> (__uint128_t)64;
-					uint32_t otherStartPos = readkey >> (__uint128_t)32;
-					uint32_t otherEndPos = readkey;
-					if (read == i) continue;
-					if (!alsoSmaller && read < i) continue;
-					matches.emplace_back(read, startpos, endpos, otherStartPos, otherEndPos);
+					size_t i = 0;
+					{
+						std::lock_guard<std::mutex> lock { readIndexMutex };
+						i = nextReadIndex;
+						nextReadIndex += 1;
+					}
+					if (i >= hashesPerRead.size()) break;
+					phmap::flat_hash_map<uint32_t, std::vector<Match>> matchesPerRead;
+					for (std::tuple<uint32_t, uint32_t, uint32_t> t : hashesPerRead[i])
+					{
+						uint32_t hash = std::get<0>(t);
+						uint32_t startpos = std::get<1>(t);
+						uint32_t endpos = std::get<2>(t);
+						bool thisFw = (startpos & 0x80000000) == 0;
+						for (__uint128_t readkey : numbers[hash])
+						{
+							uint32_t read = readkey >> (__uint128_t)64;
+							uint32_t otherStartPos = readkey >> (__uint128_t)32;
+							uint32_t otherEndPos = readkey;
+							bool otherFw = (otherStartPos & 0x80000000) == 0;
+							if (read == i) continue;
+							if (!alsoSmaller && read < i) continue;
+							matchesPerRead[read].emplace_back(startpos & 0x7FFFFFFF, endpos & 0x7FFFFFFF, thisFw, otherStartPos & 0x7FFFFFFF, otherEndPos & 0x7FFFFFFF, otherFw);
+							totalMatchesThisThread += 1;
+						}
+					}
+					if (matchesPerRead.size() > 0) readsWithMatchThisThread += 1;
+					for (const auto& pair : matchesPerRead)
+					{
+						callback(i, pair.first, pair.second);
+					}
+					readPairMatchesThisThread += matchesPerRead.size();
 				}
-			}
-			if (matches.size() > 0) readsWithMatch += 1;
-			std::sort(matches.begin(), matches.end());
-			totalMatches += matches.size();
-			phmap::flat_hash_set<uint32_t> matchingReads;
-			for (auto match : matches)
-			{
-				size_t otherread = std::get<0>(match);
-				uint32_t thisStartPos = std::get<1>(match);
-				uint32_t thisEndPos = std::get<2>(match);
-				uint32_t otherStartPos = std::get<3>(match);
-				uint32_t otherEndPos = std::get<4>(match);
-				bool thisbw = thisStartPos & 0x80000000;
-				bool otherbw = otherStartPos & 0x80000000;
-				thisStartPos &= 0x7FFFFFFF;
-				otherStartPos &= 0x7FFFFFFF;
-				thisEndPos &= 0x7FFFFFFF;
-				otherEndPos &= 0x7FFFFFFF;
-				assert(thisEndPos > thisStartPos);
-				assert(otherEndPos > otherStartPos);
-				callback(i, thisStartPos, thisEndPos, !thisbw, otherread, otherStartPos, otherEndPos, !otherbw);
-				matchingReads.insert(otherread);
-			}
-			readPairMatches += matchingReads.size();
+				std::lock_guard<std::mutex> lock { readIndexMutex };
+				totalMatches += totalMatchesThisThread;
+				readsWithMatch += readsWithMatchThisThread;
+				readPairMatches += readPairMatchesThisThread;
+			});
+		}
+		for (size_t i = 0; i < numThreads; i++)
+		{
+			threads[i].join();
 		}
 		result.readPairMatches = readPairMatches;
 		result.readsWithMatch = readsWithMatch;
@@ -124,74 +151,62 @@ public:
 	IterationInfo iterateMatchReadPairs(F callback) const
 	{
 		size_t currentRead = 0;
-		std::unordered_set<size_t> matches;
-		auto result = iterateMatches(true, [&currentRead, &matches, callback](size_t left, size_t leftStartPos, size_t leftEndPos, bool leftFw, size_t right, size_t rightStartPos, size_t rightEndPos, bool rightFw)
+		std::unordered_set<size_t> currentMatches;
+		auto result = iterateMatches(1, true, [&currentRead, &currentMatches, callback](size_t leftread, size_t rightread, const std::vector<Match>& matches)
 		{
-			if (left != currentRead)
+			if (leftread != currentRead)
 			{
-				if (matches.size() > 0) callback(currentRead, matches);
-				currentRead = left;
-				matches.clear();
+				if (currentMatches.size() > 0) callback(currentRead, currentMatches);
+				currentRead = leftread;
+				currentMatches.clear();
 			}
-			matches.insert(right);
+			currentMatches.insert(rightread);
 		});
-		if (matches.size() > 0) callback(currentRead, matches);
+		if (currentMatches.size() > 0) callback(currentRead, currentMatches);
 		return result;
 	}
 	template <typename F>
-	IterationInfo iterateMatchChains(const std::vector<size_t>& rawReadLengths, F callback) const
+	IterationInfo iterateMatchChains(const size_t numThreads, F callback) const
 	{
-		size_t currentLeftRead = std::numeric_limits<size_t>::max();
-		size_t currentRightRead = std::numeric_limits<size_t>::max();
-		std::vector<std::tuple<size_t, size_t, size_t, size_t>> currentFwFwMatches;
-		std::vector<std::tuple<size_t, size_t, size_t, size_t>> currentFwBwMatches;
-		std::vector<std::tuple<size_t, size_t, size_t, size_t>> currentBwFwMatches;
-		std::vector<std::tuple<size_t, size_t, size_t, size_t>> currentBwBwMatches;
-		size_t totalChains = 0;
-		auto result = iterateMatches(false, [this, &totalChains, &currentLeftRead, &currentRightRead, &currentFwFwMatches, &currentFwBwMatches, &currentBwFwMatches, &currentBwBwMatches, &rawReadLengths, callback](size_t leftread, size_t leftStartPos, size_t leftEndPos, bool leftFw, size_t rightread, size_t rightStartPos, size_t rightEndPos, bool rightFw)
+		std::atomic<size_t> totalChains = 0;
+		auto result = iterateMatches(numThreads, false, [this, &totalChains, callback](size_t leftRead, size_t rightRead, const std::vector<Match>& matches)
 		{
-			if (leftread != currentLeftRead || rightread != currentRightRead)
+			std::vector<std::tuple<size_t, size_t, size_t, size_t>> currentFwFwMatches;
+			std::vector<std::tuple<size_t, size_t, size_t, size_t>> currentFwBwMatches;
+			std::vector<std::tuple<size_t, size_t, size_t, size_t>> currentBwFwMatches;
+			std::vector<std::tuple<size_t, size_t, size_t, size_t>> currentBwBwMatches;
+			for (auto match : matches)
 			{
-				totalChains += iterateChains(currentLeftRead, currentRightRead, currentFwFwMatches, true, true, callback);
-				totalChains += iterateChains(currentLeftRead, currentRightRead, currentFwBwMatches, true, false, callback);
-				totalChains += iterateChains(currentLeftRead, currentRightRead, currentBwFwMatches, false, true, callback);
-				totalChains += iterateChains(currentLeftRead, currentRightRead, currentBwBwMatches, false, false, callback);
-				currentFwFwMatches.clear();
-				currentBwFwMatches.clear();
-				currentFwBwMatches.clear();
-				currentBwBwMatches.clear();
-				currentLeftRead = leftread;
-				currentRightRead = rightread;
-			}
-			assert(leftEndPos > leftStartPos);
-			assert(rightEndPos > rightStartPos);
-			if (rightFw)
-			{
-				if (leftFw)
+				if (match.rightFw)
 				{
-					currentFwFwMatches.emplace_back(leftStartPos, leftEndPos, rightStartPos, rightEndPos);
+					if (match.leftFw)
+					{
+						currentFwFwMatches.emplace_back(match.leftStartPos, match.leftEndPos, match.rightStartPos, match.rightEndPos);
+					}
+					else
+					{
+						currentBwFwMatches.emplace_back(match.leftStartPos, match.leftEndPos, match.rightStartPos, match.rightEndPos);
+					}
 				}
 				else
 				{
-					currentBwFwMatches.emplace_back(leftStartPos, leftEndPos, rightStartPos, rightEndPos);
+					if (match.leftFw)
+					{
+						currentFwBwMatches.emplace_back(match.leftStartPos, match.leftEndPos, match.rightStartPos, match.rightEndPos);
+					}
+					else
+					{
+						currentBwBwMatches.emplace_back(match.leftStartPos, match.leftEndPos, match.rightStartPos, match.rightEndPos);
+					}
 				}
 			}
-			else
-			{
-				if (leftFw)
-				{
-					currentFwBwMatches.emplace_back(leftStartPos, leftEndPos, rightStartPos, rightEndPos);
-				}
-				else
-				{
-					currentBwBwMatches.emplace_back(leftStartPos, leftEndPos, rightStartPos, rightEndPos);
-				}
-			}
+			size_t totalChainsPerThread = 0;
+			totalChainsPerThread += iterateChains(leftRead, rightRead, currentFwFwMatches, true, true, callback);
+			totalChainsPerThread += iterateChains(leftRead, rightRead, currentFwBwMatches, true, false, callback);
+			totalChainsPerThread += iterateChains(leftRead, rightRead, currentBwFwMatches, false, true, callback);
+			totalChainsPerThread += iterateChains(leftRead, rightRead, currentBwBwMatches, false, false, callback);
+			totalChains += totalChainsPerThread;
 		});
-		totalChains += iterateChains(currentLeftRead, currentRightRead, currentFwFwMatches, true, true, callback);
-		totalChains += iterateChains(currentLeftRead, currentRightRead, currentFwBwMatches, true, false, callback);
-		totalChains += iterateChains(currentLeftRead, currentRightRead, currentBwFwMatches, false, true, callback);
-		totalChains += iterateChains(currentLeftRead, currentRightRead, currentBwBwMatches, false, false, callback);
 		result.readChainMatches = totalChains;
 		return result;
 	}
@@ -233,9 +248,9 @@ public:
 		return result;
 	}
 	template <typename F>
-	IterationInfo iterateMatchNames(const std::vector<std::string>& names, const std::vector<size_t>& rawReadLengths, F callback) const
+	IterationInfo iterateMatchNames(const size_t numThreads, const std::vector<std::string>& names, const std::vector<size_t>& rawReadLengths, F callback) const
 	{
-		return iterateMatchChains(rawReadLengths, [&names, callback](size_t left, size_t leftStart, size_t leftEnd, bool leftFw, size_t right, size_t rightStart, size_t rightEnd, bool rightFw)
+		return iterateMatchChains(numThreads, [&names, callback](size_t left, size_t leftStart, size_t leftEnd, bool leftFw, size_t right, size_t rightStart, size_t rightEnd, bool rightFw)
 		{
 			callback(names[left], leftStart, leftEnd, leftFw, names[right], rightStart, rightEnd, rightFw);
 		});
