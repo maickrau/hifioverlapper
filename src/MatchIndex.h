@@ -9,18 +9,20 @@
 #include <thread>
 #include <unordered_set>
 #include <phmap.h>
+#include "ReadMatchposStorage.h"
 
 class ReadIdContainer
 {
 public:
 	ReadIdContainer() = default;
+	void clearConstructionVariablesAndCompact();
 	void addNumber(uint64_t key, __uint128_t value);
-	const std::vector<std::vector<__uint128_t>>& getMultiNumbers() const;
+	const std::vector<ReadMatchposStorage>& getMultiNumbers() const;
 	size_t size() const;
 private:
 	static constexpr __uint128_t FirstBit = (__uint128_t)1 << (__uint128_t)127;
-	phmap::flat_hash_map<uint64_t, __uint128_t> firstNumberOrVectorIndex;
-	std::vector<std::vector<__uint128_t>> numbers;
+	phmap::parallel_flat_hash_map<uint64_t, __uint128_t> firstNumberOrVectorIndex;
+	std::vector<ReadMatchposStorage> numbers;
 };
 
 class IterationInfo
@@ -55,15 +57,18 @@ class MatchIndex
 {
 public:
 	MatchIndex(size_t k, size_t numWindows, size_t windowSize);
+	void clearConstructionVariablesAndCompact();
 	void addMatch(uint64_t hash, __uint128_t readKey);
 	void addMatchesFromRead(uint32_t readKey, std::mutex& indexMutex, const std::string& readSequence);
+	size_t numWindowChunks() const;
+	size_t numUniqueChunks() const;
 	template <typename F>
 	IterationInfo iterateMatches(const size_t numThreads, bool alsoSmaller, F callback) const
 	{
 		IterationInfo result;
 		result.numberReads = numReads;
 		result.numerWindowChunks = idContainer.size();
-		std::vector<std::vector<std::tuple<uint32_t, uint32_t, uint32_t>>> hashesPerRead;
+		std::vector<std::vector<uint32_t>> hashesPerRead;
 		hashesPerRead.resize(numReads);
 		size_t maxPerChunk = 0;
 		const auto& numbers = idContainer.getMultiNumbers();
@@ -73,12 +78,15 @@ public:
 		{
 			totalReadChunkMatches += numbers[i].size();
 			maxPerChunk = std::max(maxPerChunk, numbers[i].size());
-			for (__uint128_t readkey : numbers[i])
+			phmap::flat_hash_set<uint32_t> readsHere;
+			for (std::tuple<uint32_t, uint32_t, uint32_t> readkey : numbers[i])
 			{
-				uint32_t readname = readkey >> (__uint128_t)64;
-				uint32_t readStartPos = readkey >> (__uint128_t)32;
-				uint32_t readEndPos = readkey;
-				hashesPerRead[readname].emplace_back(i, readStartPos, readEndPos);
+				uint32_t read = std::get<0>(readkey);
+				readsHere.insert(read);
+			}
+			for (uint32_t read : readsHere)
+			{
+				hashesPerRead[read].emplace_back(i);
 			}
 		}
 		result.totalReadChunkMatches = totalReadChunkMatches;
@@ -106,22 +114,33 @@ public:
 					}
 					if (i >= hashesPerRead.size()) break;
 					phmap::flat_hash_map<uint32_t, std::vector<Match>> matchesPerRead;
-					for (std::tuple<uint32_t, uint32_t, uint32_t> t : hashesPerRead[i])
+					for (size_t hash : hashesPerRead[i])
 					{
-						uint32_t hash = std::get<0>(t);
-						uint32_t startpos = std::get<1>(t);
-						uint32_t endpos = std::get<2>(t);
-						bool thisFw = (startpos & 0x80000000) == 0;
-						for (__uint128_t readkey : numbers[hash])
+						std::vector<std::tuple<uint32_t, uint32_t>> posesForThisRead;
+						for (std::tuple<uint32_t, uint32_t, uint32_t> readkey : numbers[hash])
 						{
-							uint32_t read = readkey >> (__uint128_t)64;
-							uint32_t otherStartPos = readkey >> (__uint128_t)32;
-							uint32_t otherEndPos = readkey;
+							uint32_t read = std::get<0>(readkey);
+							if (read != i) continue;
+							uint32_t startPos = std::get<1>(readkey);
+							uint32_t endPos = std::get<2>(readkey);
+							posesForThisRead.emplace_back(startPos, endPos);
+						}
+						for (std::tuple<uint32_t, uint32_t, uint32_t> readkey : numbers[hash])
+						{
+							uint32_t read = std::get<0>(readkey);
+							uint32_t otherStartPos = std::get<1>(readkey);
+							uint32_t otherEndPos = std::get<2>(readkey);
 							bool otherFw = (otherStartPos & 0x80000000) == 0;
 							if (read == i) continue;
 							if (!alsoSmaller && read < i) continue;
-							matchesPerRead[read].emplace_back(startpos & 0x7FFFFFFF, endpos & 0x7FFFFFFF, thisFw, otherStartPos & 0x7FFFFFFF, otherEndPos & 0x7FFFFFFF, otherFw);
-							totalMatchesThisThread += 1;
+							for (auto pos : posesForThisRead)
+							{
+								uint32_t startpos = std::get<0>(pos);
+								uint32_t endpos = std::get<1>(pos);
+								bool thisFw = (startpos & 0x80000000) == 0;
+								matchesPerRead[read].emplace_back(startpos & 0x7FFFFFFF, endpos & 0x7FFFFFFF, thisFw, otherStartPos & 0x7FFFFFFF, otherEndPos & 0x7FFFFFFF, otherFw);
+								totalMatchesThisThread += 1;
+							}
 						}
 					}
 					if (matchesPerRead.size() > 0) readsWithMatchThisThread += 1;

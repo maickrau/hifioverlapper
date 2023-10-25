@@ -21,17 +21,17 @@ void ReadIdContainer::addNumber(uint64_t key, __uint128_t value)
 			size_t index = numbers.size();
 			numbers.emplace_back();
 			firstNumberOrVectorIndex[key] = index;
-			numbers[index].push_back(oldNumber);
-			numbers[index].push_back(value);
+			numbers[index].emplace_back(oldNumber);
+			numbers[index].emplace_back(value);
 		}
 		else
 		{
-			numbers[found->second].push_back(value);
+			numbers[found->second].emplace_back(value);
 		}
 	}
 }
 
-const std::vector<std::vector<__uint128_t>>& ReadIdContainer::getMultiNumbers() const
+const std::vector<ReadMatchposStorage>& ReadIdContainer::getMultiNumbers() const
 {
 	return numbers;
 }
@@ -41,12 +41,31 @@ size_t ReadIdContainer::size() const
 	return firstNumberOrVectorIndex.size();
 }
 
+void ReadIdContainer::clearConstructionVariablesAndCompact()
+{
+	{
+		decltype(firstNumberOrVectorIndex) tmp;
+		std::swap(tmp, firstNumberOrVectorIndex);
+	}
+	for (size_t i = 0; i < numbers.size(); i++)
+	{
+		numbers[i].compact();
+	}
+	std::vector<ReadMatchposStorage> compactedNumbers;
+	compactedNumbers.resize(numbers.size());
+	for (size_t i = 0; i < numbers.size(); i++)
+	{
+		std::swap(numbers[i], compactedNumbers[i]);
+	}
+	std::swap(numbers, compactedNumbers);
+}
+
 Match::Match(size_t leftStartPos, size_t leftEndPos, bool leftFw, size_t rightStartPos, size_t rightEndPos, bool rightFw) :
 	leftStartPos(leftStartPos),
 	leftEndPos(leftEndPos),
-	leftFw(leftFw),
 	rightStartPos(rightStartPos),
 	rightEndPos(rightEndPos),
+	leftFw(leftFw),
 	rightFw(rightFw)
 {
 }
@@ -70,6 +89,11 @@ void MatchIndex::addMatchesFromRead(uint32_t readKey, std::mutex& indexMutex, co
 	addMatchesFromReadOneWay(readKey, indexMutex, readSequence, true);
 	auto rev = revCompRaw(readSequence);
 	addMatchesFromReadOneWay(readKey, indexMutex, rev, false);
+}
+
+void MatchIndex::clearConstructionVariablesAndCompact()
+{
+	idContainer.clearConstructionVariablesAndCompact();
 }
 
 void MatchIndex::addMatchesFromReadOneWay(uint32_t readKey, std::mutex& indexMutex, const std::string& readSequence, bool fw)
@@ -115,4 +139,14 @@ void MatchIndex::addMatchesFromReadOneWay(uint32_t readKey, std::mutex& indexMut
 			addMatch(std::get<0>(t), ((__uint128_t)readKey << (__uint128_t)64) + ((__uint128_t)std::get<1>(t) << (__uint128_t)32) + (__uint128_t)std::get<2>(t));
 		}
 	});
+}
+
+size_t MatchIndex::numWindowChunks() const
+{
+	return idContainer.size();
+}
+
+size_t MatchIndex::numUniqueChunks() const
+{
+	return idContainer.size() - idContainer.getMultiNumbers().size();
 }
