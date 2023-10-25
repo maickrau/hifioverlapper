@@ -185,45 +185,38 @@ public:
 		return result;
 	}
 	template <typename F>
-	IterationInfo iterateMatchChains(const size_t numThreads, F callback) const
+	IterationInfo iterateMatchChains(const size_t numThreads, const std::vector<size_t>& rawReadLengths, F callback) const
 	{
 		std::atomic<size_t> totalChains = 0;
-		auto result = iterateMatches(numThreads, false, [this, &totalChains, callback](size_t leftRead, size_t rightRead, const std::vector<Match>& matches)
+		auto result = iterateMatches(numThreads, false, [this, &totalChains, &rawReadLengths, callback](size_t leftRead, size_t rightRead, const std::vector<Match>& matches)
 		{
-			std::vector<std::tuple<size_t, size_t, size_t, size_t>> currentFwFwMatches;
-			std::vector<std::tuple<size_t, size_t, size_t, size_t>> currentFwBwMatches;
-			std::vector<std::tuple<size_t, size_t, size_t, size_t>> currentBwFwMatches;
-			std::vector<std::tuple<size_t, size_t, size_t, size_t>> currentBwBwMatches;
+			std::vector<std::tuple<size_t, size_t, size_t, size_t>> currentFwMatches;
+			std::vector<std::tuple<size_t, size_t, size_t, size_t>> currentBwMatches;
 			for (auto match : matches)
 			{
+				if (!match.leftFw)
+				{
+					match.leftFw = true;
+					std::swap(match.leftStartPos, match.leftEndPos);
+					match.leftStartPos = rawReadLengths[leftRead] - 1 - match.leftStartPos; // end-inclusive positions!
+					match.leftEndPos = rawReadLengths[leftRead] - 1 - match.leftEndPos; // end-inclusive positions!
+					match.rightFw = !match.rightFw;
+					std::swap(match.rightStartPos, match.rightEndPos);
+					match.rightStartPos = rawReadLengths[rightRead] - 1 - match.rightStartPos; // end-inclusive positions!
+					match.rightEndPos = rawReadLengths[rightRead] - 1 - match.rightEndPos; // end-inclusive positions!
+				}
 				if (match.rightFw)
 				{
-					if (match.leftFw)
-					{
-						currentFwFwMatches.emplace_back(match.leftStartPos, match.leftEndPos, match.rightStartPos, match.rightEndPos);
-					}
-					else
-					{
-						currentBwFwMatches.emplace_back(match.leftStartPos, match.leftEndPos, match.rightStartPos, match.rightEndPos);
-					}
+					currentFwMatches.emplace_back(match.leftStartPos, match.leftEndPos, match.rightStartPos, match.rightEndPos);
 				}
 				else
 				{
-					if (match.leftFw)
-					{
-						currentFwBwMatches.emplace_back(match.leftStartPos, match.leftEndPos, match.rightStartPos, match.rightEndPos);
-					}
-					else
-					{
-						currentBwBwMatches.emplace_back(match.leftStartPos, match.leftEndPos, match.rightStartPos, match.rightEndPos);
-					}
+					currentBwMatches.emplace_back(match.leftStartPos, match.leftEndPos, match.rightStartPos, match.rightEndPos);
 				}
 			}
 			size_t totalChainsPerThread = 0;
-			totalChainsPerThread += iterateChains(leftRead, rightRead, currentFwFwMatches, true, true, callback);
-			totalChainsPerThread += iterateChains(leftRead, rightRead, currentFwBwMatches, true, false, callback);
-			totalChainsPerThread += iterateChains(leftRead, rightRead, currentBwFwMatches, false, true, callback);
-			totalChainsPerThread += iterateChains(leftRead, rightRead, currentBwBwMatches, false, false, callback);
+			totalChainsPerThread += iterateChains(leftRead, rightRead, currentFwMatches, true, true, callback);
+			totalChainsPerThread += iterateChains(leftRead, rightRead, currentBwMatches, true, false, callback);
 			totalChains += totalChainsPerThread;
 		});
 		result.readChainMatches = totalChains;
@@ -269,7 +262,7 @@ public:
 	template <typename F>
 	IterationInfo iterateMatchNames(const size_t numThreads, const std::vector<std::string>& names, const std::vector<size_t>& rawReadLengths, F callback) const
 	{
-		return iterateMatchChains(numThreads, [&names, &rawReadLengths, callback](size_t left, size_t leftStart, size_t leftEnd, bool leftFw, size_t right, size_t rightStart, size_t rightEnd, bool rightFw)
+		return iterateMatchChains(numThreads, rawReadLengths, [&names, &rawReadLengths, callback](size_t left, size_t leftStart, size_t leftEnd, bool leftFw, size_t right, size_t rightStart, size_t rightEnd, bool rightFw)
 		{
 			callback(names[left], rawReadLengths[left], leftStart, leftEnd, leftFw, names[right], rawReadLengths[right], rightStart, rightEnd, rightFw);
 		});
