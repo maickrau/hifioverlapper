@@ -30,10 +30,10 @@ int main(int argc, char** argv)
 	size_t numUniqueChunks = matchIndex.numUniqueChunks();
 	matchIndex.clearConstructionVariablesAndCompact();
 	std::mutex printMutex;
-	auto result = matchIndex.iterateMatchNames(numThreads, storage.getNames(), storage.getRawReadLengths(), [&printMutex](const std::string& left, const size_t leftstart, const size_t leftend, const bool leftFw, const std::string& right, const size_t rightstart, const size_t rightend, const bool rightFw)
+	auto result = matchIndex.iterateMatchNames(numThreads, storage.getNames(), storage.getRawReadLengths(), [&printMutex](const std::string& left, const size_t leftlen, const size_t leftstart, const size_t leftend, const bool leftFw, const std::string& right, const size_t rightlen, const size_t rightstart, const size_t rightend, const bool rightFw)
 	{
 		std::lock_guard<std::mutex> lock { printMutex };
-		std::cout << left << "\t" << leftstart << "\t" << leftend << "\t" << (leftFw ? "fw" : "bw") << "\t" << right << "\t" << rightstart << "\t" << rightend << "\t" << (rightFw ? "fw" : "bw") << std::endl;
+		std::cout << left << "\t" << leftlen << "\t" << leftstart << "\t" << leftend << "\t" << (leftFw ? "fw" : "bw") << "\t" << right << "\t" << rightlen << "\t" << rightstart << "\t" << rightend << "\t" << (rightFw ? "fw" : "bw") << std::endl;
 	});
 	std::cerr << result.numberReads << " reads" << std::endl;
 	std::cerr << numWindowChunks << " distinct windowchunks" << std::endl;
