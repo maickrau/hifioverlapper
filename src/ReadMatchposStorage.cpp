@@ -65,24 +65,36 @@ ReadMatchposStorage& ReadMatchposStorage::operator=(ReadMatchposStorage&& other)
 std::tuple<uint32_t, uint32_t, uint32_t> ReadMatchposStorage::getValue(size_t index) const
 {
 	std::tuple<uint32_t, uint32_t, uint32_t> result;
-	size_t startIndex = index*5;
-	std::get<0>(result) = ((uint32_t)values[startIndex] << 16) + values[startIndex+1];
-	std::get<1>(result) = ((uint32_t)values[startIndex+2] << 16) + values[startIndex+3];
-	std::get<2>(result) = std::get<1>(result) + values[startIndex+4];
+	size_t startIndex = index*10;
+	std::get<0>(result) = ((uint32_t)values[startIndex] << (uint32_t)24) + ((uint32_t)values[startIndex+1] << (uint32_t)16) + ((uint32_t)values[startIndex+2] << (uint32_t)8) + (uint32_t)values[startIndex+3];
+	std::get<1>(result) = ((uint32_t)(values[startIndex+4] & 0x7F) << (uint32_t)16) + ((uint32_t)values[startIndex+5] << (uint32_t)8) + (uint32_t)values[startIndex+6];
+	std::get<2>(result) = ((uint32_t)values[startIndex+7] << (uint32_t)16) + ((uint32_t)values[startIndex+8] << (uint32_t)8) + (uint32_t)values[startIndex+9];
+	assert(std::get<2>(result) > std::get<1>(result));
+	std::get<1>(result) += ((uint32_t)values[startIndex+4] & 0x80) << 24; // reverse orientation bit
+	std::get<2>(result) += ((uint32_t)values[startIndex+4] & 0x80) << 24; // reverse orientation bit
+	assert(std::get<2>(result) > std::get<1>(result));
 	return result;
 }
 
 void ReadMatchposStorage::emplace_back(uint32_t read, uint32_t startpos, uint32_t endpos)
 {
-	assert(endpos - startpos < std::numeric_limits<uint16_t>::max());
+	assert(endpos > startpos);
+	assert((startpos & 0x7FFFFFFF) < (1ull<<24ull));
+	assert((endpos & 0x7FFFFFFF) < (1ull<<24ull));
 	if (values == nullptr) resize(10);
 	if (realsize == capacity) resize(2*capacity);
-	size_t pos = realsize*5;
-	values[pos] = read >> 16;
-	values[pos+1] = read;
-	values[pos+2] = startpos >> 16;
-	values[pos+3] = startpos;
-	values[pos+4] = (endpos-startpos);
+	size_t pos = realsize*10;
+	values[pos] = read >> 24;
+	values[pos+1] = read >> 16;
+	values[pos+2] = read >> 8;
+	values[pos+3] = read;
+	values[pos+4] = startpos >> 16;
+	values[pos+5] = startpos >> 8;
+	values[pos+6] = startpos;
+	values[pos+7] = endpos >> 16;
+	values[pos+8] = endpos >> 8;
+	values[pos+9] = endpos;
+	values[pos+4] += (startpos & 0x80000000) >> 24; // reverse orientation bit
 	realsize += 1;
 }
 
@@ -116,9 +128,9 @@ void ReadMatchposStorage::compact()
 
 void ReadMatchposStorage::resize(size_t newCapacity)
 {
-	uint16_t* newValues = new uint16_t[newCapacity*5];
+	uint8_t* newValues = new uint8_t[newCapacity*10];
 	if (values != nullptr) memcpy(newValues, values, 10*realsize);
-	std::memset(newValues+5*realsize, 0, (newCapacity-realsize)*10);
+	std::memset(newValues+10*realsize, 0, (newCapacity-realsize)*10);
 	capacity = newCapacity;
 	std::swap(values, newValues);
 	if (newValues != nullptr) delete [] newValues;

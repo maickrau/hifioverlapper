@@ -37,7 +37,7 @@ public:
 	void reserve(size_t newCapacity);
 private:
 	void resize(size_t newCapacity);
-	uint16_t* values;
+	uint8_t* values;
 	uint32_t realsize; // uint32_t because even this saves a few Gb in large datasets
 	uint32_t capacity; // uint32_t because even this saves a few Gb in large datasets
 	friend void swap(ReadMatchposStorage& left, ReadMatchposStorage& right);
