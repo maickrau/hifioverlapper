@@ -26,6 +26,12 @@ $(BINDIR)/matchchains: $(OBJ) $(ODIR)/matchchains.o MBG/lib/mbg.a
 $(ODIR)/matchchains.o: $(SRCDIR)/matchchains.cpp $(DEPS) $(OBJ)
 	$(GPP) -c -o $@ $< $(CPPFLAGS) -DVERSION="\"$(VERSION)\""
 
+$(BINDIR)/intervalgraph: $(OBJ) $(ODIR)/intervalgraph.o MBG/lib/mbg.a
+	$(GPP) -o $@ $^ $(LINKFLAGS)
+
+$(ODIR)/intervalgraph.o: $(SRCDIR)/intervalgraph.cpp $(DEPS) $(OBJ)
+	$(GPP) -c -o $@ $< $(CPPFLAGS) -DVERSION="\"$(VERSION)\""
+
 $(BINDIR)/unitigcorrection: $(OBJ) $(ODIR)/unitigcorrection.o MBG/lib/mbg.a
 	$(GPP) -o $@ $^ $(LINKFLAGS)
 
@@ -38,7 +44,7 @@ $(ODIR)/%.o: $(SRCDIR)/%.cpp $(DEPS)
 MBG/lib/mbg.a:
 	$(MAKE) -C MBG lib
 
-all: $(BINDIR)/matchchains $(BINDIR)/unitigcorrection
+all: $(BINDIR)/matchchains $(BINDIR)/unitigcorrection $(BINDIR)/intervalgraph
 
 clean:
 	rm -f $(ODIR)/*
