@@ -114,6 +114,7 @@ public:
 					}
 					if (i >= hashesPerRead.size()) break;
 					phmap::flat_hash_map<uint32_t, std::vector<Match>> matchesPerRead;
+					bool hasMatch = false;
 					for (size_t hash : hashesPerRead[i])
 					{
 						std::vector<std::tuple<uint32_t, uint32_t>> posesForThisRead;
@@ -132,6 +133,7 @@ public:
 							uint32_t otherEndPos = std::get<2>(readkey);
 							bool otherFw = (otherStartPos & 0x80000000) == 0;
 							if (read == i) continue;
+							hasMatch = true;
 							if (!alsoSmaller && read < i) continue;
 							for (auto pos : posesForThisRead)
 							{
@@ -143,7 +145,7 @@ public:
 							}
 						}
 					}
-					if (matchesPerRead.size() > 0) readsWithMatchThisThread += 1;
+					if (hasMatch) readsWithMatchThisThread += 1;
 					for (const auto& pair : matchesPerRead)
 					{
 						callback(i, pair.first, pair.second);
