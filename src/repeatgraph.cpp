@@ -69,180 +69,25 @@ bool merge(std::vector<std::vector<std::tuple<size_t, size_t, size_t, bool>>>& b
 	return true;
 }
 
-bool extendAndMergeBreakpoints(const std::vector<size_t>& readLengths, std::vector<std::vector<std::tuple<size_t, size_t, size_t, bool>>>& breakpoints, size_t leftRead, bool leftFw, size_t leftStart, size_t leftEnd, size_t rightRead, bool rightFw, size_t rightStart, size_t rightEnd)
-{
-	assert(leftFw);
-	assert(leftRead != rightRead);
-	assert(leftEnd - leftStart == rightEnd - rightStart);
-	bool addedAny = false;
-	size_t countLeftBreakpoints = 0;
-	size_t countRightBreakpoints = 0;
-	for (auto breakpoint : breakpoints[leftRead])
-	{
-		if (std::get<0>(breakpoint) < leftStart) continue;
-		if (std::get<0>(breakpoint) > leftEnd) continue;
-		countLeftBreakpoints += 1;
-		size_t positionWithinMatch = std::get<0>(breakpoint) - leftStart;
-		assert(positionWithinMatch <= leftEnd - leftStart);
-		size_t positionInRight = rightStart + positionWithinMatch;
-		assert(positionInRight <= readLengths[rightRead]);
-		if (rightFw)
-		{
-			auto gotMatch = getBreakpoint(breakpoints[rightRead], rightRead, positionInRight);
-			if (gotMatch.second) addedAny = true;
-			bool merged = merge(breakpoints, leftRead, std::get<0>(breakpoint), rightRead, gotMatch.first, true);
-			if (merged) addedAny = true;
-		}
-		else
-		{
-			positionInRight = readLengths[rightRead] - positionInRight;
-			assert(positionInRight <= readLengths[rightRead]);
-			auto gotMatch = getBreakpoint(breakpoints[rightRead], rightRead, positionInRight);
-			if (gotMatch.second) addedAny = true;
-			bool merged = merge(breakpoints, leftRead, std::get<0>(breakpoint), rightRead, gotMatch.first, false);
-			if (merged) addedAny = true;
-		}
-	}
-	for (auto breakpoint : breakpoints[rightRead])
-	{
-		size_t positionWithinMatch;
-		if (rightFw)
-		{
-			if (std::get<0>(breakpoint) < rightStart) continue;
-			if (std::get<0>(breakpoint) > rightEnd) continue;
-			positionWithinMatch = std::get<0>(breakpoint) - rightStart;
-		}
-		else
-		{
-			if (std::get<0>(breakpoint) < readLengths[rightRead]-rightEnd) continue;
-			if (std::get<0>(breakpoint) > readLengths[rightRead]-rightStart) continue;
-			positionWithinMatch = (readLengths[rightRead]-rightStart) - std::get<0>(breakpoint);
-		}
-		assert(positionWithinMatch <= rightEnd - rightStart);
-		countRightBreakpoints += 1;
-		size_t positionInLeft = leftStart + positionWithinMatch;
-		assert(positionInLeft <= readLengths[leftRead]);
-		auto gotMatch = getBreakpoint(breakpoints[leftRead], leftRead, positionInLeft);
-		if (gotMatch.second) addedAny = true;
-		bool merged = merge(breakpoints, leftRead, gotMatch.first, rightRead, std::get<0>(breakpoint), rightFw);
-		if (merged) addedAny = true;
-	}
-	if (!(addedAny || countLeftBreakpoints == countRightBreakpoints))
-	{
-		std::cerr << leftStart << " " << leftEnd << " " << readLengths[leftRead] << std::endl;
-		for (auto breakpoint : breakpoints[leftRead])
-		{
-			std::cerr << std::get<0>(breakpoint) << " ";
-		}
-		std::cerr << std::endl;
-		std::cerr << rightStart << " " << rightEnd << " " << readLengths[rightRead] << std::endl;
-		for (auto breakpoint : breakpoints[rightRead])
-		{
-			std::cerr << std::get<0>(breakpoint) << " ";
-		}
-		std::cerr << std::endl;
-		std::cerr << (rightFw ? "fw" : "bw") << std::endl;
-		std::cerr << countLeftBreakpoints << " " << countRightBreakpoints << std::endl;
-	}
-	assert(addedAny || countLeftBreakpoints == countRightBreakpoints);
-	return addedAny;
-}
-
-std::vector<std::vector<std::tuple<size_t, size_t, size_t, bool>>> extendAndMergeBreakpoints(const std::vector<size_t>& readLengths, const std::vector<std::tuple<size_t, size_t, size_t, size_t, size_t, size_t, bool>>& matches)
-{
-	std::vector<std::vector<size_t>> relevantMatches;
-	std::vector<std::vector<std::tuple<size_t, size_t, size_t, bool>>> breakpoints;
-	relevantMatches.resize(readLengths.size());
-	breakpoints.resize(readLengths.size());
-	for (size_t i = 0; i < matches.size(); i++)
-	{
-		relevantMatches[std::get<0>(matches[i])].emplace_back(i);
-		relevantMatches[std::get<3>(matches[i])].emplace_back(i);
-		breakpoints[std::get<0>(matches[i])].emplace_back(std::get<1>(matches[i]), std::get<0>(matches[i]), std::get<1>(matches[i]), true);
-		breakpoints[std::get<0>(matches[i])].emplace_back(std::get<2>(matches[i]), std::get<0>(matches[i]), std::get<2>(matches[i]), true);
-		if (std::get<6>(matches[i]))
-		{
-			breakpoints[std::get<3>(matches[i])].emplace_back(std::get<4>(matches[i]), std::get<3>(matches[i]), std::get<4>(matches[i]), true);
-			breakpoints[std::get<3>(matches[i])].emplace_back(std::get<5>(matches[i]), std::get<3>(matches[i]), std::get<5>(matches[i]), true);
-		}
-		else
-		{
-			breakpoints[std::get<3>(matches[i])].emplace_back(readLengths[std::get<3>(matches[i])]-std::get<5>(matches[i]), std::get<3>(matches[i]), readLengths[std::get<3>(matches[i])]-std::get<5>(matches[i]), true);
-			breakpoints[std::get<3>(matches[i])].emplace_back(readLengths[std::get<3>(matches[i])]-std::get<4>(matches[i]), std::get<3>(matches[i]), readLengths[std::get<3>(matches[i])]-std::get<4>(matches[i]), true);
-		}
-	}
-	std::vector<size_t> checkQueue;
-	for (size_t i = 0; i < readLengths.size(); i++)
-	{
-		checkQueue.emplace_back(i);
-		breakpoints[i].emplace_back(0, i, 0, true);
-		breakpoints[i].emplace_back(readLengths[i], i, readLengths[i], true);
-		std::sort(breakpoints[i].begin(), breakpoints[i].end(), [](auto left, auto right) { return std::get<0>(left) < std::get<0>(right); });
-		if (breakpoints[i].size() >= 1)
-		{
-			for (size_t j = breakpoints[i].size()-1; j > 0; j--)
-			{
-				if (breakpoints[i][j] != breakpoints[i][j-1]) continue;
-				std::swap(breakpoints[i][j], breakpoints[i].back());
-				breakpoints[i].pop_back();
-			}
-		}
-		std::sort(breakpoints[i].begin(), breakpoints[i].end(), [](auto left, auto right) { return std::get<0>(left) < std::get<0>(right); });
-	}
-	while (checkQueue.size() >= 1)
-	{
-		size_t topRead = checkQueue.back();
-		checkQueue.pop_back();
-		phmap::flat_hash_set<size_t> newCheckables;
-		for (auto matchi : relevantMatches[topRead])
-		{
-			bool addedAny = extendAndMergeBreakpoints(readLengths, breakpoints, std::get<0>(matches[matchi]), true, std::get<1>(matches[matchi]), std::get<2>(matches[matchi]), std::get<3>(matches[matchi]), std::get<6>(matches[matchi]), std::get<4>(matches[matchi]), std::get<5>(matches[matchi]));
-			if (addedAny)
-			{
-				newCheckables.emplace(std::get<0>(matches[matchi]));
-				newCheckables.emplace(std::get<3>(matches[matchi]));
-			}
-		}
-		checkQueue.insert(checkQueue.end(), newCheckables.begin(), newCheckables.end());
-	}
-	for (size_t i = 0; i < readLengths.size(); i++)
-	{
-		std::sort(breakpoints[i].begin(), breakpoints[i].end(), [](auto left, auto right) { return std::get<0>(left) < std::get<0>(right); });
-		for (size_t j = 0; j < breakpoints[i].size(); j++)
-		{
-			find(breakpoints, i, std::get<0>(breakpoints[i][j]));
-		}
-		for (size_t j = 1; j < breakpoints[i].size(); j++)
-		{
-			assert(std::get<0>(breakpoints[i][j]) > std::get<0>(breakpoints[i][j-1]));
-		}
-	}
-	return breakpoints;
-}
-
-void writeGraph(std::string outputFileName, const std::vector<size_t>& breakpointCoverage, const std::vector<size_t>& edgeCoverage, const std::vector<std::pair<std::pair<size_t, bool>, std::pair<size_t, bool>>>& edges, const std::vector<size_t>& edgeLength, const size_t minCoverage)
+void writeGraph(std::string outputFileName, const std::vector<size_t>& nodeCoverage, const std::vector<size_t>& nodeLength, const phmap::flat_hash_map<std::pair<std::pair<size_t, bool>, std::pair<size_t, bool>>, size_t>& edgeCoverage, const size_t minCoverage, const size_t k)
 {
 	std::ofstream graph { outputFileName };
-	size_t countBreakpoints = 0;
-	size_t countSegments = 0;
-	for (size_t i = 0; i < breakpointCoverage.size(); i++)
+	size_t countNodes = 0;
+	size_t countEdges = 0;
+	for (size_t i = 0; i < nodeCoverage.size(); i++)
 	{
-		if (breakpointCoverage[i] < minCoverage) continue;
-		graph << "S\tbreakpoint_" << i << "\t*\tLN:i:0\tll:f:" << breakpointCoverage[i] << "\tFC:i:" << breakpointCoverage[i] << std::endl;
-		countBreakpoints += 1;
+		if (nodeCoverage[i] < minCoverage) continue;
+		graph << "S\tnode_" << i << "\t*\tLN:i:" << (nodeLength[i]+k-1) << "\tll:f:" << nodeCoverage[i] << "\tFC:i:" << nodeCoverage[i] * (nodeLength[i]+k-1) << std::endl;
+		countNodes += 1;
 	}
-	for (size_t i = 0; i < edgeCoverage.size(); i++)
+	for (auto pair : edgeCoverage)
 	{
-		if (edgeCoverage[i] < minCoverage) continue;
-		assert(breakpointCoverage[edges[i].first.first] >= minCoverage);
-		assert(breakpointCoverage[edges[i].second.first] >= minCoverage);
-		graph << "S\tsegment_" << i << "\t*\tLN:i:" << edgeLength[i] << "\tll:f:" << edgeCoverage[i] << "\tFC:i:" << edgeCoverage[i] * edgeLength[i] << std::endl;
-		graph << "L\tbreakpoint_" << edges[i].first.first << "\t" << (edges[i].first.second ? "+" : "-") << "\tsegment_" << i << "\t+\t0M\tec:i:" << edgeCoverage[i] << std::endl;
-		graph << "L\tsegment_" << i << "\t+\tbreakpoint_" << edges[i].second.first << "\t" << (edges[i].second.second ? "+" : "-") << "\t0M\tec:i:" << edgeCoverage[i] << std::endl;
-		countSegments += 1;
+		if (pair.second < minCoverage) continue;
+		graph << "L\tnode_" << pair.first.first.first << "\t" << (pair.first.first.second ? "+" : "-") << "\tnode_" << pair.first.second.first << "\t" << (pair.first.second.second ? "+" : "-") << "\t" << (k-1) << "M\tec:i:" << pair.second << std::endl;
+		countEdges += 1;
 	}
-	std::cerr << countBreakpoints << " graph breakpoints" << std::endl;
-	std::cerr << countSegments << " graph segments" << std::endl;
+	std::cerr << countNodes << " graph nodes" << std::endl;
+	std::cerr << countEdges << " graph edges" << std::endl;
 }
 
 phmap::flat_hash_map<std::pair<size_t, size_t>, size_t> getBreakpointToNode(const std::vector<std::vector<std::tuple<size_t, size_t, size_t, bool>>>& breakpoints)
@@ -327,19 +172,19 @@ void mergeSegments(std::vector<std::vector<std::tuple<size_t, size_t, bool>>>& r
 	result[std::get<0>(rightParent)][std::get<1>(rightParent)] = std::make_tuple(std::get<0>(leftParent), std::get<1>(leftParent), std::get<2>(leftParent) ^ std::get<2>(rightParent) ^ fw);
 }
 
-void mergeSegments(const std::vector<size_t>& readLengths, std::vector<std::vector<std::tuple<size_t, size_t, bool>>>& result, const std::vector<std::vector<std::pair<size_t, size_t>>>& segmentIntervals, const std::vector<std::vector<std::pair<std::pair<size_t, bool>, std::pair<size_t, bool>>>>& segmentEndpoints, const size_t leftRead, const bool leftFw, const size_t leftStart, const size_t leftEnd, const size_t rightRead, const bool rightFw, const size_t rightStart, const size_t rightEnd)
+void mergeSegments(const std::vector<size_t>& readLengths, std::vector<std::vector<std::tuple<size_t, size_t, bool>>>& result, const std::vector<std::vector<size_t>>& segmentStarts, const size_t leftRead, const bool leftFw, const size_t leftStart, const size_t leftEnd, const size_t rightRead, const bool rightFw, const size_t rightStart, const size_t rightEnd)
 {
 	assert(leftFw);
 	size_t leftFirst = std::numeric_limits<size_t>::max();
 	size_t leftLast = std::numeric_limits<size_t>::max();
-	for (size_t i = 0; i < segmentIntervals[leftRead].size(); i++)
+	for (size_t i = 0; i < segmentStarts[leftRead].size(); i++)
 	{
-		if (segmentIntervals[leftRead][i].first == leftStart)
+		if (segmentStarts[leftRead][i] == leftStart)
 		{
 			assert(leftFirst == std::numeric_limits<size_t>::max());
 			leftFirst = i;
 		}
-		if (segmentIntervals[leftRead][i].second == leftEnd)
+		if (segmentStarts[leftRead][i] == leftEnd)
 		{
 			assert(leftLast == std::numeric_limits<size_t>::max());
 			leftLast = i;
@@ -347,27 +192,27 @@ void mergeSegments(const std::vector<size_t>& readLengths, std::vector<std::vect
 	}
 	assert(leftFirst != std::numeric_limits<size_t>::max());
 	assert(leftLast != std::numeric_limits<size_t>::max());
-	assert(leftLast >= leftFirst);
+	assert(leftLast > leftFirst);
 	size_t rightFirst = std::numeric_limits<size_t>::max();
 	size_t rightLast = std::numeric_limits<size_t>::max();
-	for (size_t i = 0; i < segmentIntervals[rightRead].size(); i++)
+	for (size_t i = 0; i < segmentStarts[rightRead].size(); i++)
 	{
-		if (rightFw && segmentIntervals[rightRead][i].first == rightStart)
+		if (rightFw && segmentStarts[rightRead][i] == rightStart)
 		{
 			assert(rightFirst == std::numeric_limits<size_t>::max());
 			rightFirst = i;
 		}
-		if (rightFw && segmentIntervals[rightRead][i].second == rightEnd)
+		if (rightFw && segmentStarts[rightRead][i] == rightEnd)
 		{
 			assert(rightLast == std::numeric_limits<size_t>::max());
 			rightLast = i;
 		}
-		if (!rightFw && segmentIntervals[rightRead][i].first == readLengths[rightRead]-rightEnd)
+		if (!rightFw && segmentStarts[rightRead][i] == readLengths[rightRead]-rightEnd)
 		{
 			assert(rightFirst == std::numeric_limits<size_t>::max());
 			rightFirst = i;
 		}
-		if (!rightFw && segmentIntervals[rightRead][i].second == readLengths[rightRead]-rightStart)
+		if (!rightFw && segmentStarts[rightRead][i] == readLengths[rightRead]-rightStart)
 		{
 			assert(rightLast == std::numeric_limits<size_t>::max());
 			rightLast = i;
@@ -375,75 +220,48 @@ void mergeSegments(const std::vector<size_t>& readLengths, std::vector<std::vect
 	}
 	assert(rightFirst != std::numeric_limits<size_t>::max());
 	assert(rightLast != std::numeric_limits<size_t>::max());
-	assert(rightLast >= rightFirst);
-	if (!(rightLast-rightFirst == leftLast-leftFirst))
-	{
-		std::cerr << leftStart << " " << leftEnd << std::endl;
-		std::cerr << rightStart << " " << rightEnd << std::endl;
-		std::cerr << (rightFw ? "fw" : "bw") << std::endl;
-		std::cerr << rightFirst << " " << rightLast << std::endl;
-		std::cerr << leftFirst << " " << leftLast << std::endl;
-	}
+	assert(rightLast > rightFirst);
 	assert(rightLast-rightFirst == leftLast-leftFirst);
-	for (size_t i = 0; i <= leftLast-leftFirst; i++)
+	for (size_t i = 0; i < leftLast-leftFirst; i++)
 	{
 		if (rightFw)
 		{
-			assert(segmentIntervals[leftRead][leftFirst+i].second - segmentIntervals[leftRead][leftFirst+i].first == segmentIntervals[rightRead][rightFirst+i].second - segmentIntervals[rightRead][rightFirst+i].first);
+			assert(segmentStarts[leftRead][leftFirst+i+1] - segmentStarts[leftRead][leftFirst+i] == segmentStarts[rightRead][rightFirst+i+1] - segmentStarts[rightRead][rightFirst+i]);
 			mergeSegments(result, leftRead, leftFirst+i, rightRead, rightFirst+i, true);
 		}
 		else
 		{
-			assert(segmentIntervals[leftRead][leftFirst+i].second - segmentIntervals[leftRead][leftFirst+i].first == segmentIntervals[rightRead][rightLast-i].second - segmentIntervals[rightRead][rightLast-i].first);
-			mergeSegments(result, leftRead, leftFirst+i, rightRead, rightLast-i, false);
+			assert(segmentStarts[leftRead][leftFirst+i+1] - segmentStarts[leftRead][leftFirst+i] == segmentStarts[rightRead][rightLast-i] - segmentStarts[rightRead][rightLast-i-1]);
+			mergeSegments(result, leftRead, leftFirst+i, rightRead, rightLast-i-1, false);
 		}
 	}
 }
 
-std::tuple<std::vector<std::vector<std::tuple<size_t, size_t, bool>>>, std::vector<std::vector<std::pair<size_t, size_t>>>, std::vector<std::vector<std::pair<std::pair<size_t, bool>, std::pair<size_t, bool>>>>> mergeSegments(const std::vector<size_t>& readLengths, const std::vector<std::tuple<size_t, size_t, size_t, size_t, size_t, size_t, bool>>& matches, const std::vector<std::vector<std::tuple<size_t, size_t, size_t, bool>>>& breakpoints, const phmap::flat_hash_map<std::pair<size_t, size_t>, size_t>& breakpointToNode)
+std::tuple<std::vector<std::vector<std::tuple<size_t, size_t, bool>>>, std::vector<std::vector<size_t>>> mergeSegments(const std::vector<size_t>& readLengths, const std::vector<std::tuple<size_t, size_t, size_t, size_t, size_t, size_t, bool>>& matches, const std::vector<std::vector<bool>>& breakpoints)
 {
 	assert(breakpoints.size() == readLengths.size());
 	std::vector<std::vector<std::tuple<size_t, size_t, bool>>> result;
-	std::vector<std::vector<std::pair<size_t, size_t>>> segmentIntervals;
-	std::vector<std::vector<std::pair<std::pair<size_t, bool>, std::pair<size_t, bool>>>> segmentEndpoints;
-	result.resize(readLengths.size());
-	segmentIntervals.resize(readLengths.size());
-	segmentEndpoints.resize(readLengths.size());
+	std::vector<std::vector<size_t>> segmentStarts;
+	result.resize(breakpoints.size());
+	segmentStarts.resize(breakpoints.size());
 	for (size_t i = 0; i < breakpoints.size(); i++)
 	{
-		size_t countSegments = breakpoints[i].size()-1;
-		result[i].resize(countSegments);
-		segmentIntervals[i].resize(countSegments);
-		segmentEndpoints[i].resize(countSegments);
-		for (size_t j = 0; j < countSegments; j++)
-		{
-			std::get<0>(result[i][j]) = i;
-			std::get<1>(result[i][j]) = j;
-			std::get<2>(result[i][j]) = true;
-		}
-		size_t lastPos = std::get<0>(breakpoints[i][0]);
-		std::pair<size_t, bool> lastEndpoint { breakpointToNode.at(std::make_pair(std::get<1>(breakpoints[i][0]), std::get<2>(breakpoints[i][0]))), std::get<3>(breakpoints[i][0]) };
-		assert(std::get<0>(breakpoints[i][0]) == 0);
-		assert(std::get<0>(breakpoints[i].back()) == readLengths[i]);
+		segmentStarts[i].push_back(0);
+		assert(breakpoints[i][0]);
 		for (size_t j = 1; j < breakpoints[i].size(); j++)
 		{
-			size_t nextPos = std::get<0>(breakpoints[i][j]);
-			assert(nextPos != 0);
-			assert(j == breakpoints[i].size()-1 || nextPos != readLengths[i]);
-			std::pair<size_t, bool> endpoint;
-			endpoint.first = breakpointToNode.at(std::make_pair(std::get<1>(breakpoints[i][j]), std::get<2>(breakpoints[i][j])));
-			endpoint.second = std::get<3>(breakpoints[i][j]);
-			segmentIntervals[i][j-1].first = lastPos;
-			segmentIntervals[i][j-1].second = nextPos;
-			segmentEndpoints[i][j-1].first = lastEndpoint;
-			segmentEndpoints[i][j-1].second = endpoint;
-			lastPos = nextPos;
-			lastEndpoint = endpoint;
+			if (!breakpoints[i][j]) continue;
+			result[i].emplace_back(i, result[i].size(), true);
+			segmentStarts[i].push_back(j);
 		}
+		assert(segmentStarts[i].size() == result[i].size()+1);
+		assert(segmentStarts[i][0] == 0);
+		assert(segmentStarts[i].back() == readLengths[i]);
+		assert(result[i].size() >= 1);
 	}
 	for (auto match : matches)
 	{
-		mergeSegments(readLengths, result, segmentIntervals, segmentEndpoints, std::get<0>(match), true, std::get<1>(match), std::get<2>(match), std::get<3>(match), std::get<6>(match), std::get<4>(match), std::get<5>(match));
+		mergeSegments(readLengths, result, segmentStarts, std::get<0>(match), true, std::get<1>(match), std::get<2>(match), std::get<3>(match), std::get<6>(match), std::get<4>(match), std::get<5>(match));
 	}
 	for (size_t i = 0; i < result.size(); i++)
 	{
@@ -452,10 +270,10 @@ std::tuple<std::vector<std::vector<std::tuple<size_t, size_t, bool>>>, std::vect
 			find(result, i, j);
 		}
 	}
-	return std::make_tuple(result, segmentIntervals, segmentEndpoints);
+	return std::make_tuple(result, segmentStarts);
 }
 
-phmap::flat_hash_map<std::pair<size_t, size_t>, size_t> getSegmentToEdge(const std::vector<std::vector<std::tuple<size_t, size_t, bool>>>& segments)
+phmap::flat_hash_map<std::pair<size_t, size_t>, size_t> getSegmentToNode(const std::vector<std::vector<std::tuple<size_t, size_t, bool>>>& segments)
 {
 	size_t nextIndex = 0;
 	phmap::flat_hash_map<std::pair<size_t, size_t>, size_t> result;
@@ -473,53 +291,153 @@ phmap::flat_hash_map<std::pair<size_t, size_t>, size_t> getSegmentToEdge(const s
 	return result;
 }
 
-std::tuple<std::vector<std::pair<std::pair<size_t, bool>, std::pair<size_t, bool>>>, std::vector<size_t>, std::vector<size_t>> getEdgeInformation(const std::vector<size_t>& readLengths, const phmap::flat_hash_map<std::pair<size_t, size_t>, size_t>& segmentToEdge, const std::vector<std::vector<std::tuple<size_t, size_t, bool>>>& segments, const std::vector<std::vector<std::pair<size_t, size_t>>>& segmentIntervals, const std::vector<std::vector<std::pair<std::pair<size_t, bool>, std::pair<size_t, bool>>>>& segmentEndpoints)
+phmap::flat_hash_map<std::pair<std::pair<size_t, bool>, std::pair<size_t, bool>>, size_t> getEdgeCoverages(const std::vector<size_t>& readLengths, const phmap::flat_hash_map<std::pair<size_t, size_t>, size_t>& segmentToNode, const std::vector<std::vector<std::tuple<size_t, size_t, bool>>>& segments)
 {
-	std::vector<std::pair<std::pair<size_t, bool>, std::pair<size_t, bool>>> edges;
-	std::vector<size_t> edgeCoverage;
-	std::vector<size_t> edgeLength;
-	edges.resize(segmentToEdge.size());
-	edgeCoverage.resize(segmentToEdge.size(), 0);
-	edgeLength.resize(segmentToEdge.size(), std::numeric_limits<size_t>::max());
+	phmap::flat_hash_map<std::pair<std::pair<size_t, bool>, std::pair<size_t, bool>>, size_t> edgeCoverage;
+	for (size_t i = 0; i < segments.size(); i++)
+	{
+		for (size_t j = 1; j < segments[i].size(); j++)
+		{
+			std::pair<size_t, bool> edgeFrom;
+			edgeFrom.first = segmentToNode.at(std::make_pair(std::get<0>(segments[i][j-1]), std::get<1>(segments[i][j-1])));
+			edgeFrom.second = std::get<2>(segments[i][j-1]);
+			std::pair<size_t, bool> edgeTo;
+			edgeTo.first = segmentToNode.at(std::make_pair(std::get<0>(segments[i][j]), std::get<1>(segments[i][j])));
+			edgeTo.second = std::get<2>(segments[i][j]);
+			auto key = canon(edgeFrom, edgeTo);
+			edgeCoverage[key] += 1;
+		}
+	}
+	return edgeCoverage;
+}
+
+bool extendBreakpoints(const std::vector<size_t>& readLengths, std::vector<std::vector<bool>>& breakpoints, size_t leftRead, bool leftFw, size_t leftStart, size_t leftEnd, size_t rightRead, bool rightFw, size_t rightStart, size_t rightEnd)
+{
+	assert(leftFw);
+	assert(leftRead != rightRead);
+	assert(leftEnd - leftStart == rightEnd - rightStart);
+	bool addedAny = false;
+	size_t leftIndex = leftStart;
+	size_t rightIndex = rightStart;
+	if (!rightFw) rightIndex = readLengths[rightRead] - rightStart;
+	for (size_t i = 0; i <= leftEnd-leftStart; i++)
+	{
+		if (breakpoints[leftRead][leftIndex] && !breakpoints[rightRead][rightIndex])
+		{
+			breakpoints[rightRead][rightIndex] = true;
+			addedAny = true;
+		}
+		if (!breakpoints[leftRead][leftIndex] && breakpoints[rightRead][rightIndex])
+		{
+			breakpoints[leftRead][leftIndex] = true;
+			addedAny = true;
+		}
+		leftIndex += 1;
+		rightIndex += (rightFw ? 1 : -1);
+	}
+	return addedAny;
+}
+
+std::vector<std::vector<bool>> extendBreakpoints(const std::vector<size_t>& readLengths, const std::vector<std::tuple<size_t, size_t, size_t, size_t, size_t, size_t, bool>>& matches)
+{
+	std::vector<std::vector<bool>> breakpoints;
+	breakpoints.resize(readLengths.size());
+	for (size_t i = 0; i < readLengths.size(); i++)
+	{
+		breakpoints[i].resize(readLengths[i]+1, false);
+		breakpoints[i][0] = true;
+		breakpoints[i].back() = true;
+	}
+	std::vector<std::vector<size_t>> relevantMatches;
+	relevantMatches.resize(readLengths.size());
+	for (size_t i = 0; i < matches.size(); i++)
+	{
+		relevantMatches[std::get<0>(matches[i])].emplace_back(i);
+		relevantMatches[std::get<3>(matches[i])].emplace_back(i);
+		breakpoints[std::get<0>(matches[i])][std::get<1>(matches[i])] = true;
+		breakpoints[std::get<0>(matches[i])][std::get<2>(matches[i])] = true;
+		if (std::get<6>(matches[i]))
+		{
+			breakpoints[std::get<3>(matches[i])][std::get<4>(matches[i])] = true;
+			breakpoints[std::get<3>(matches[i])][std::get<5>(matches[i])] = true;
+		}
+		else
+		{
+			breakpoints[std::get<3>(matches[i])][readLengths[std::get<3>(matches[i])]] = true;
+			breakpoints[std::get<3>(matches[i])][readLengths[std::get<3>(matches[i])]] = true;
+		}
+	}
+	std::vector<size_t> checkQueue;
+	for (size_t i = 0; i < readLengths.size(); i++)
+	{
+		checkQueue.emplace_back(i);
+	}
+	while (checkQueue.size() >= 1)
+	{
+		size_t topRead = checkQueue.back();
+		checkQueue.pop_back();
+		phmap::flat_hash_set<size_t> newCheckables;
+		for (auto matchi : relevantMatches[topRead])
+		{
+			bool addedAny = extendBreakpoints(readLengths, breakpoints, std::get<0>(matches[matchi]), true, std::get<1>(matches[matchi]), std::get<2>(matches[matchi]), std::get<3>(matches[matchi]), std::get<6>(matches[matchi]), std::get<4>(matches[matchi]), std::get<5>(matches[matchi]));
+			if (addedAny)
+			{
+				newCheckables.emplace(std::get<0>(matches[matchi]));
+				newCheckables.emplace(std::get<3>(matches[matchi]));
+			}
+		}
+		checkQueue.insert(checkQueue.end(), newCheckables.begin(), newCheckables.end());
+	}
+	return breakpoints;
+}
+
+std::vector<size_t> getNodeCoverage(const std::vector<std::vector<std::tuple<size_t, size_t, bool>>>& segments, const phmap::flat_hash_map<std::pair<size_t, size_t>, size_t>& segmentToNode)
+{
+	std::vector<size_t> result;
+	result.resize(segmentToNode.size(), 0);
 	for (size_t i = 0; i < segments.size(); i++)
 	{
 		for (size_t j = 0; j < segments[i].size(); j++)
 		{
-			std::pair<size_t, bool> edge;
-			edge.first = segmentToEdge.at(std::make_pair(std::get<0>(segments[i][j]), std::get<1>(segments[i][j])));
-			edge.second = std::get<2>(segments[i][j]);
-			if (edge.second)
-			{
-				edges[edge.first] = segmentEndpoints[i][j];
-			}
-			else
-			{
-				edges[edge.first].first = reverse(segmentEndpoints[i][j].second);
-				edges[edge.first].second = reverse(segmentEndpoints[i][j].first);
-			}
-			edgeCoverage[edge.first] += 1;
-			assert(edgeLength[edge.first] == std::numeric_limits<size_t>::max() || edgeLength[edge.first] == (segmentIntervals[i][j].second - segmentIntervals[i][j].first));
-			edgeLength[edge.first] = (segmentIntervals[i][j].second - segmentIntervals[i][j].first);
+			size_t node = segmentToNode.at(std::make_pair(std::get<0>(segments[i][j]), std::get<1>(segments[i][j])));
+			result[node] += 1;
 		}
 	}
-	return std::make_tuple(edges, edgeCoverage, edgeLength);
+	return result;
 }
 
-void makeGraph(const std::vector<size_t>& readLengths, const std::vector<std::tuple<size_t, size_t, size_t, size_t, size_t, size_t, bool>>& matches, size_t minCoverage, std::string outputFileName)
+std::vector<size_t> getNodeLengths(const std::vector<std::vector<std::tuple<size_t, size_t, bool>>>& segments, const phmap::flat_hash_map<std::pair<size_t, size_t>, size_t>& segmentToNode, const std::vector<std::vector<size_t>>& segmentStarts)
 {
-	std::vector<std::vector<std::tuple<size_t, size_t, size_t, bool>>> breakpoints = extendAndMergeBreakpoints(readLengths, matches);
-	phmap::flat_hash_map<std::pair<size_t, size_t>, size_t> breakpointToNode = getBreakpointToNode(breakpoints);
-	std::vector<size_t> breakpointCoverage = getBreakpointCoverage(breakpointToNode, breakpoints);
+	std::vector<size_t> result;
+	result.resize(segmentToNode.size(), std::numeric_limits<size_t>::max());
+	for (size_t i = 0; i < segments.size(); i++)
+	{
+		for (size_t j = 0; j < segments[i].size(); j++)
+		{
+			size_t node = segmentToNode.at(std::make_pair(std::get<0>(segments[i][j]), std::get<1>(segments[i][j])));
+			size_t length = segmentStarts[i][j+1] - segmentStarts[i][j];
+			if (!(result[node] == std::numeric_limits<size_t>::max() || result[node] == length))
+			{
+				std::cerr << result[node] << " " << length << std::endl;
+			}
+			assert(result[node] == std::numeric_limits<size_t>::max() || result[node] == length);
+			result[node] = length;
+		}
+	}
+	return result;
+}
+
+void makeGraph(const std::vector<size_t>& readLengths, const std::vector<std::tuple<size_t, size_t, size_t, size_t, size_t, size_t, bool>>& matches, const size_t minCoverage, const std::string& outputFileName, const size_t k)
+{
+	std::vector<std::vector<bool>> breakpoints = extendBreakpoints(readLengths, matches);
 	std::vector<std::vector<std::tuple<size_t, size_t, bool>>> segments;
-	std::vector<std::vector<std::pair<size_t, size_t>>> segmentIntervals;
-	std::vector<std::vector<std::pair<std::pair<size_t, bool>, std::pair<size_t, bool>>>> segmentEndpoints;
-	std::tie(segments, segmentIntervals, segmentEndpoints) = mergeSegments(readLengths, matches, breakpoints, breakpointToNode);
-	phmap::flat_hash_map<std::pair<size_t, size_t>, size_t> segmentToEdge = getSegmentToEdge(segments);
-	std::vector<std::pair<std::pair<size_t, bool>, std::pair<size_t, bool>>> edges;
-	std::vector<size_t> edgeCoverage;
-	std::vector<size_t> edgeLength;
-	std::tie(edges, edgeCoverage, edgeLength) = getEdgeInformation(readLengths, segmentToEdge, segments, segmentIntervals, segmentEndpoints);
-	writeGraph(outputFileName, breakpointCoverage, edgeCoverage, edges, edgeLength, minCoverage);
+	std::vector<std::vector<size_t>> segmentStarts;
+	std::tie(segments, segmentStarts) = mergeSegments(readLengths, matches, breakpoints);
+	phmap::flat_hash_map<std::pair<size_t, size_t>, size_t> segmentToNode = getSegmentToNode(segments);
+	std::vector<size_t> nodeCoverage = getNodeCoverage(segments, segmentToNode);
+	std::vector<size_t> nodeLength = getNodeLengths(segments, segmentToNode, segmentStarts);
+	phmap::flat_hash_map<std::pair<std::pair<size_t, bool>, std::pair<size_t, bool>>, size_t> edgeCoverages = getEdgeCoverages(readLengths, segmentToNode, segments);
+	writeGraph(outputFileName, nodeCoverage, nodeLength, edgeCoverages, minCoverage, k);
 }
 
 std::vector<std::tuple<size_t, size_t, size_t, size_t, size_t, size_t, bool>> getKmerMatches(const std::vector<TwobitString>& readSequences, const size_t left, const size_t leftStart, const size_t leftEnd, const size_t right, const size_t rightStart, const size_t rightEnd, const bool rightFw, const size_t k, const size_t w)
@@ -618,6 +536,8 @@ int main(int argc, char** argv)
 	size_t numWindows = std::stoull(argv[3]);
 	size_t windowSize = std::stoull(argv[4]);
 	size_t minAlignmentLength = std::stoull(argv[5]);
+	const size_t graphk = 31;
+	const size_t minCoverage = 2;
 	std::vector<std::string> readFiles;
 	for (size_t i = 6; i < argc; i++)
 	{
@@ -654,7 +574,7 @@ int main(int argc, char** argv)
 	std::cerr << mappingmatches.size() << " mapping matches" << std::endl;
 	for (auto t : mappingmatches)
 	{
-		auto matches = getKmerMatches(readSequences, std::get<0>(t), std::get<1>(t), std::get<2>(t), std::get<3>(t), std::get<4>(t), std::get<5>(t), std::get<6>(t), 21, 50);
+		auto matches = getKmerMatches(readSequences, std::get<0>(t), std::get<1>(t), std::get<2>(t), std::get<3>(t), std::get<4>(t), std::get<5>(t), std::get<6>(t), graphk, 50);
 		for (auto match : matches)
 		{
 			assert(std::get<2>(match) > std::get<1>(match));
@@ -663,12 +583,11 @@ int main(int argc, char** argv)
 			assert(std::get<5>(match) > std::get<4>(match));
 			assert(std::get<4>(match) >= std::get<4>(t));
 			assert(std::get<5>(match) <= std::get<5>(t));
-			std::cout << readNames[std::get<0>(match)] << "\tfw\t" << readLengths[std::get<0>(match)] << "\t" << std::get<1>(match) << "\t" << std::get<2>(match) + 20 << "\t" << readNames[std::get<3>(match)] << "\t" << (std::get<6>(match) ? "fw" : "bw") << "\t" << readLengths[std::get<3>(match)] << "\t" << std::get<4>(match) << "\t" << std::get<5>(match) + 20 << std::endl;
 		}
 		kmermatches.insert(kmermatches.end(), matches.begin(), matches.end());
 	}
 	std::cerr << kmermatches.size() << " kmer matches" << std::endl;
-	makeGraph(readLengths, kmermatches, 2, "graph.gfa");
+	makeGraph(readLengths, kmermatches, minCoverage, "graph.gfa", graphk);
 	std::cerr << result.numberReads << " reads" << std::endl;
 	std::cerr << numWindowChunks << " distinct windowchunks" << std::endl;
 	std::cerr << result.totalReadChunkMatches << " read-windowchunk matches (except unique)" << std::endl;
