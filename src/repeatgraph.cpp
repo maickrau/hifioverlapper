@@ -311,12 +311,13 @@ phmap::flat_hash_map<std::pair<std::pair<size_t, bool>, std::pair<size_t, bool>>
 	return edgeCoverage;
 }
 
-bool extendBreakpoints(const std::vector<size_t>& readLengths, std::vector<std::vector<bool>>& breakpoints, size_t leftRead, bool leftFw, size_t leftStart, size_t leftEnd, size_t rightRead, bool rightFw, size_t rightStart, size_t rightEnd)
+std::pair<bool, bool> extendBreakpoints(const std::vector<size_t>& readLengths, std::vector<std::vector<bool>>& breakpoints, size_t leftRead, bool leftFw, size_t leftStart, size_t leftEnd, size_t rightRead, bool rightFw, size_t rightStart, size_t rightEnd)
 {
 	assert(leftFw);
 	assert(leftRead != rightRead);
 	assert(leftEnd - leftStart == rightEnd - rightStart);
-	bool addedAny = false;
+	bool addedAnyLeft = false;
+	bool addedAnyRight = false;
 	size_t leftIndex = leftStart;
 	size_t rightIndex = rightStart;
 	if (!rightFw) rightIndex = readLengths[rightRead] - rightStart;
@@ -327,17 +328,38 @@ bool extendBreakpoints(const std::vector<size_t>& readLengths, std::vector<std::
 		if (leftbit && !rightbit)
 		{
 			breakpoints[rightRead][rightIndex] = true;
-			addedAny = true;
+			addedAnyRight = true;
 		}
 		else if (!leftbit && rightbit)
 		{
 			breakpoints[leftRead][leftIndex] = true;
-			addedAny = true;
+			addedAnyLeft = true;
 		}
 		leftIndex += 1;
 		rightIndex += (rightFw ? 1 : -1);
 	}
-	return addedAny;
+	return std::make_pair(addedAnyLeft, addedAnyRight);
+}
+
+std::pair<size_t, size_t> getMatchSpan(const std::vector<size_t>& readLengths, const std::tuple<size_t, size_t, size_t, size_t, size_t, size_t, bool> match, size_t readI)
+{
+	if (std::get<0>(match) == readI)
+	{
+		assert(std::get<3>(match) != readI);
+		return std::make_pair(std::get<1>(match), std::get<2>(match));
+	}
+	else
+	{
+		assert(std::get<3>(match) == readI);
+		if (std::get<6>(match))
+		{
+			return std::make_pair(std::get<4>(match), std::get<5>(match));
+		}
+		else
+		{
+			return std::make_pair(readLengths[readI] - std::get<5>(match), readLengths[readI] - std::get<4>(match));
+		}
+	}
 }
 
 std::vector<std::vector<bool>> extendBreakpoints(const std::vector<size_t>& readLengths, const std::vector<std::tuple<size_t, size_t, size_t, size_t, size_t, size_t, bool>>& matches)
@@ -370,25 +392,41 @@ std::vector<std::vector<bool>> extendBreakpoints(const std::vector<size_t>& read
 		}
 	}
 	std::vector<size_t> checkQueue;
-	for (size_t i = 0; i < readLengths.size(); i++)
+	for (size_t i = 0; i < matches.size(); i++)
 	{
 		checkQueue.emplace_back(i);
 	}
 	while (checkQueue.size() >= 1)
 	{
-		size_t topRead = checkQueue.back();
+		size_t matchi = checkQueue.back();
 		checkQueue.pop_back();
-		phmap::flat_hash_set<size_t> newCheckables;
-		for (auto matchi : relevantMatches[topRead])
+		std::pair<bool, bool> addedAny = extendBreakpoints(readLengths, breakpoints, std::get<0>(matches[matchi]), true, std::get<1>(matches[matchi]), std::get<2>(matches[matchi]), std::get<3>(matches[matchi]), std::get<6>(matches[matchi]), std::get<4>(matches[matchi]), std::get<5>(matches[matchi]));
+		if (addedAny.first)
 		{
-			bool addedAny = extendBreakpoints(readLengths, breakpoints, std::get<0>(matches[matchi]), true, std::get<1>(matches[matchi]), std::get<2>(matches[matchi]), std::get<3>(matches[matchi]), std::get<6>(matches[matchi]), std::get<4>(matches[matchi]), std::get<5>(matches[matchi]));
-			if (addedAny)
+			size_t thisStart = std::get<1>(matches[matchi]);
+			size_t thisEnd = std::get<2>(matches[matchi]);
+			for (auto aln : relevantMatches[std::get<0>(matches[matchi])])
 			{
-				newCheckables.emplace(std::get<0>(matches[matchi]));
-				newCheckables.emplace(std::get<3>(matches[matchi]));
+				if (aln == matchi) continue;
+				auto otherStartEnd = getMatchSpan(readLengths, matches[aln], std::get<0>(matches[matchi]));
+				if (otherStartEnd.first > thisEnd) continue;
+				if (otherStartEnd.second < thisStart) continue;
+				checkQueue.push_back(aln);
 			}
 		}
-		checkQueue.insert(checkQueue.end(), newCheckables.begin(), newCheckables.end());
+		if (addedAny.second)
+		{
+			size_t thisStart, thisEnd;
+			std::tie(thisStart, thisEnd) = getMatchSpan(readLengths, matches[matchi], std::get<3>(matches[matchi]));
+			for (auto aln : relevantMatches[std::get<3>(matches[matchi])])
+			{
+				if (aln == matchi) continue;
+				auto otherStartEnd = getMatchSpan(readLengths, matches[aln], std::get<3>(matches[matchi]));
+				if (otherStartEnd.first > thisEnd) continue;
+				if (otherStartEnd.second < thisStart) continue;
+				checkQueue.push_back(aln);
+			}
+		}
 	}
 	return breakpoints;
 }
