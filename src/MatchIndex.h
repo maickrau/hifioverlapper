@@ -138,6 +138,8 @@ public:
 								uint32_t startpos = std::get<0>(pos);
 								uint32_t endpos = std::get<1>(pos);
 								bool thisFw = (startpos & 0x80000000) == 0;
+								if ((endpos-startpos) > (otherEndPos-otherStartPos) + 50) continue;
+								if ((otherEndPos-otherStartPos) > (endpos-startpos) + 50) continue;
 								matchesPerRead[read].emplace_back(startpos & 0x7FFFFFFF, endpos & 0x7FFFFFFF, thisFw, otherStartPos & 0x7FFFFFFF, otherEndPos & 0x7FFFFFFF, otherFw);
 								totalMatchesThisThread += 1;
 							}
