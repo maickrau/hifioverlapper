@@ -365,6 +365,8 @@ std::pair<size_t, size_t> getMatchSpan(const std::vector<size_t>& readLengths, c
 std::vector<std::vector<bool>> extendBreakpoints(const std::vector<size_t>& readLengths, const std::vector<std::tuple<size_t, size_t, size_t, size_t, size_t, size_t, bool>>& matches)
 {
 	std::vector<std::vector<bool>> breakpoints;
+	uint64_t firstBit = 1ull << 63ull;
+	uint64_t mask = firstBit-1;
 	breakpoints.resize(readLengths.size());
 	for (size_t i = 0; i < readLengths.size(); i++)
 	{
@@ -372,12 +374,20 @@ std::vector<std::vector<bool>> extendBreakpoints(const std::vector<size_t>& read
 		breakpoints[i][0] = true;
 		breakpoints[i].back() = true;
 	}
-	std::vector<std::vector<size_t>> relevantMatches;
+	std::vector<std::vector<uint64_t>> relevantMatches;
+	std::vector<std::pair<size_t, size_t>> matchLeftSpan;
+	std::vector<std::pair<size_t, size_t>> matchRightSpan;
+	std::vector<bool> inQueue;
+	inQueue.resize(matches.size(), true);
+	matchLeftSpan.resize(matches.size());
+	matchRightSpan.resize(matches.size());
 	relevantMatches.resize(readLengths.size());
 	for (size_t i = 0; i < matches.size(); i++)
 	{
 		relevantMatches[std::get<0>(matches[i])].emplace_back(i);
-		relevantMatches[std::get<3>(matches[i])].emplace_back(i);
+		relevantMatches[std::get<3>(matches[i])].emplace_back(i + firstBit);
+		matchLeftSpan[i] = getMatchSpan(readLengths, matches[i], std::get<0>(matches[i]));
+		matchRightSpan[i] = getMatchSpan(readLengths, matches[i], std::get<3>(matches[i]));
 		breakpoints[std::get<0>(matches[i])][std::get<1>(matches[i])] = true;
 		breakpoints[std::get<0>(matches[i])][std::get<2>(matches[i])] = true;
 		if (std::get<6>(matches[i]))
@@ -399,32 +409,35 @@ std::vector<std::vector<bool>> extendBreakpoints(const std::vector<size_t>& read
 	while (checkQueue.size() >= 1)
 	{
 		size_t matchi = checkQueue.back();
+		inQueue[matchi] = false;
 		checkQueue.pop_back();
 		std::pair<bool, bool> addedAny = extendBreakpoints(readLengths, breakpoints, std::get<0>(matches[matchi]), true, std::get<1>(matches[matchi]), std::get<2>(matches[matchi]), std::get<3>(matches[matchi]), std::get<6>(matches[matchi]), std::get<4>(matches[matchi]), std::get<5>(matches[matchi]));
 		if (addedAny.first)
 		{
-			size_t thisStart = std::get<1>(matches[matchi]);
-			size_t thisEnd = std::get<2>(matches[matchi]);
 			for (auto aln : relevantMatches[std::get<0>(matches[matchi])])
 			{
-				if (aln == matchi) continue;
-				auto otherStartEnd = getMatchSpan(readLengths, matches[aln], std::get<0>(matches[matchi]));
-				if (otherStartEnd.first > thisEnd) continue;
-				if (otherStartEnd.second < thisStart) continue;
-				checkQueue.push_back(aln);
+				size_t rawAln = aln & mask;
+				if (inQueue[rawAln]) continue;
+				if (rawAln == matchi) continue;
+				bool isRight = (aln & firstBit) != 0;
+				if (isRight && (matchRightSpan[rawAln].first > matchLeftSpan[matchi].second || matchRightSpan[rawAln].second < matchLeftSpan[matchi].first)) continue;
+				if (!isRight && (matchLeftSpan[rawAln].first > matchLeftSpan[matchi].second || matchLeftSpan[rawAln].second < matchLeftSpan[matchi].first)) continue;
+				checkQueue.push_back(rawAln);
+				inQueue[rawAln] = true;
 			}
 		}
 		if (addedAny.second)
 		{
-			size_t thisStart, thisEnd;
-			std::tie(thisStart, thisEnd) = getMatchSpan(readLengths, matches[matchi], std::get<3>(matches[matchi]));
 			for (auto aln : relevantMatches[std::get<3>(matches[matchi])])
 			{
-				if (aln == matchi) continue;
-				auto otherStartEnd = getMatchSpan(readLengths, matches[aln], std::get<3>(matches[matchi]));
-				if (otherStartEnd.first > thisEnd) continue;
-				if (otherStartEnd.second < thisStart) continue;
-				checkQueue.push_back(aln);
+				size_t rawAln = aln & mask;
+				if (inQueue[rawAln]) continue;
+				if (rawAln == matchi) continue;
+				bool isRight = (aln & firstBit) != 0;
+				if (isRight && (matchRightSpan[rawAln].first > matchRightSpan[matchi].second || matchRightSpan[rawAln].second < matchRightSpan[matchi].first)) continue;
+				if (!isRight && (matchLeftSpan[rawAln].first > matchRightSpan[matchi].second || matchLeftSpan[rawAln].second < matchRightSpan[matchi].first)) continue;
+				checkQueue.push_back(rawAln);
+				inQueue[rawAln] = true;
 			}
 		}
 	}
