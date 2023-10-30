@@ -172,54 +172,36 @@ void mergeSegments(std::vector<std::vector<std::tuple<size_t, size_t, bool>>>& r
 	result[std::get<0>(rightParent)][std::get<1>(rightParent)] = std::make_tuple(std::get<0>(leftParent), std::get<1>(leftParent), std::get<2>(leftParent) ^ std::get<2>(rightParent) ^ fw);
 }
 
-void mergeSegments(const std::vector<size_t>& readLengths, std::vector<std::vector<std::tuple<size_t, size_t, bool>>>& result, const std::vector<std::vector<size_t>>& segmentStarts, const size_t leftRead, const bool leftFw, const size_t leftStart, const size_t leftEnd, const size_t rightRead, const bool rightFw, const size_t rightStart, const size_t rightEnd)
+void mergeSegments(const std::vector<size_t>& readLengths, std::vector<std::vector<std::tuple<size_t, size_t, bool>>>& result, const std::vector<std::vector<size_t>>& segmentStarts, const std::vector<RankBitvector>& breakpoints, const size_t leftRead, const bool leftFw, const size_t leftStart, const size_t leftEnd, const size_t rightRead, const bool rightFw, const size_t rightStart, const size_t rightEnd)
 {
 	assert(leftFw);
-	size_t leftFirst = std::numeric_limits<size_t>::max();
-	size_t leftLast = std::numeric_limits<size_t>::max();
-	for (size_t i = 0; i < segmentStarts[leftRead].size(); i++)
-	{
-		if (segmentStarts[leftRead][i] == leftStart)
-		{
-			assert(leftFirst == std::numeric_limits<size_t>::max());
-			leftFirst = i;
-		}
-		if (segmentStarts[leftRead][i] == leftEnd)
-		{
-			assert(leftLast == std::numeric_limits<size_t>::max());
-			leftLast = i;
-		}
-	}
-	assert(leftFirst != std::numeric_limits<size_t>::max());
-	assert(leftLast != std::numeric_limits<size_t>::max());
+	assert(breakpoints[leftRead].get(leftStart));
+	assert(breakpoints[leftRead].get(leftEnd));
+	size_t leftFirst = breakpoints[leftRead].getRank(leftStart);
+	size_t leftLast = breakpoints[leftRead].getRank(leftEnd);
 	assert(leftLast > leftFirst);
-	size_t rightFirst = std::numeric_limits<size_t>::max();
-	size_t rightLast = std::numeric_limits<size_t>::max();
-	for (size_t i = 0; i < segmentStarts[rightRead].size(); i++)
+	assert(segmentStarts[leftRead][leftFirst] == leftStart);
+	assert(segmentStarts[leftRead][leftLast] == leftEnd);
+	size_t rightFirst;
+	size_t rightLast;
+	if (rightFw)
 	{
-		if (rightFw && segmentStarts[rightRead][i] == rightStart)
-		{
-			assert(rightFirst == std::numeric_limits<size_t>::max());
-			rightFirst = i;
-		}
-		if (rightFw && segmentStarts[rightRead][i] == rightEnd)
-		{
-			assert(rightLast == std::numeric_limits<size_t>::max());
-			rightLast = i;
-		}
-		if (!rightFw && segmentStarts[rightRead][i] == readLengths[rightRead]-rightEnd)
-		{
-			assert(rightFirst == std::numeric_limits<size_t>::max());
-			rightFirst = i;
-		}
-		if (!rightFw && segmentStarts[rightRead][i] == readLengths[rightRead]-rightStart)
-		{
-			assert(rightLast == std::numeric_limits<size_t>::max());
-			rightLast = i;
-		}
+		assert(breakpoints[rightRead].get(rightStart));
+		assert(breakpoints[rightRead].get(rightEnd));
+		rightFirst = breakpoints[rightRead].getRank(rightStart);
+		rightLast = breakpoints[rightRead].getRank(rightEnd);
+		assert(segmentStarts[rightRead][rightFirst] == rightStart);
+		assert(segmentStarts[rightRead][rightLast] == rightEnd);
 	}
-	assert(rightFirst != std::numeric_limits<size_t>::max());
-	assert(rightLast != std::numeric_limits<size_t>::max());
+	else
+	{
+		assert(breakpoints[rightRead].get(readLengths[rightRead]-rightStart));
+		assert(breakpoints[rightRead].get(readLengths[rightRead]-rightEnd));
+		rightLast = breakpoints[rightRead].getRank(readLengths[rightRead]-rightStart);
+		rightFirst = breakpoints[rightRead].getRank(readLengths[rightRead]-rightEnd);
+		assert(segmentStarts[rightRead][rightLast] == readLengths[rightRead]-rightStart);
+		assert(segmentStarts[rightRead][rightFirst] == readLengths[rightRead]-rightEnd);
+	}
 	assert(rightLast > rightFirst);
 	assert(rightLast-rightFirst == leftLast-leftFirst);
 	for (size_t i = 0; i < leftLast-leftFirst; i++)
@@ -237,7 +219,7 @@ void mergeSegments(const std::vector<size_t>& readLengths, std::vector<std::vect
 	}
 }
 
-std::tuple<std::vector<std::vector<std::tuple<size_t, size_t, bool>>>, std::vector<std::vector<size_t>>> mergeSegments(const std::vector<size_t>& readLengths, const std::vector<std::tuple<size_t, size_t, size_t, size_t, size_t, size_t, bool>>& matches, const std::vector<std::vector<bool>>& breakpoints)
+std::tuple<std::vector<std::vector<std::tuple<size_t, size_t, bool>>>, std::vector<std::vector<size_t>>> mergeSegments(const std::vector<size_t>& readLengths, const std::vector<std::tuple<size_t, size_t, size_t, size_t, size_t, size_t, bool>>& matches, const std::vector<RankBitvector>& breakpoints)
 {
 	assert(breakpoints.size() == readLengths.size());
 	std::vector<std::vector<std::tuple<size_t, size_t, bool>>> result;
@@ -247,21 +229,21 @@ std::tuple<std::vector<std::vector<std::tuple<size_t, size_t, bool>>>, std::vect
 	for (size_t i = 0; i < breakpoints.size(); i++)
 	{
 		segmentStarts[i].push_back(0);
-		assert(breakpoints[i][0]);
+		assert(breakpoints[i].get(0));
+		assert(breakpoints[i].get(readLengths[i]));
 		for (size_t j = 1; j < breakpoints[i].size(); j++)
 		{
-			if (!breakpoints[i][j]) continue;
+			if (!breakpoints[i].get(j)) continue;
 			result[i].emplace_back(i, result[i].size(), true);
 			segmentStarts[i].push_back(j);
 		}
-		assert(segmentStarts[i].size() == result[i].size()+1);
-		assert(segmentStarts[i][0] == 0);
-		assert(segmentStarts[i].back() == readLengths[i]);
 		assert(result[i].size() >= 1);
+		assert(segmentStarts[i].size() == result[i].size()+1);
+		assert(result[i].size() == breakpoints[i].getRank(readLengths[i]));
 	}
 	for (auto match : matches)
 	{
-		mergeSegments(readLengths, result, segmentStarts, std::get<0>(match), true, std::get<1>(match), std::get<2>(match), std::get<3>(match), std::get<6>(match), std::get<4>(match), std::get<5>(match));
+		mergeSegments(readLengths, result, segmentStarts, breakpoints, std::get<0>(match), true, std::get<1>(match), std::get<2>(match), std::get<3>(match), std::get<6>(match), std::get<4>(match), std::get<5>(match));
 	}
 	for (size_t i = 0; i < result.size(); i++)
 	{
@@ -270,7 +252,7 @@ std::tuple<std::vector<std::vector<std::tuple<size_t, size_t, bool>>>, std::vect
 			find(result, i, j);
 		}
 	}
-	return std::make_tuple(result, segmentStarts);
+	return std::make_pair(result, segmentStarts);
 }
 
 phmap::flat_hash_map<std::pair<size_t, size_t>, size_t> getSegmentToNode(const std::vector<std::vector<std::tuple<size_t, size_t, bool>>>& segments)
@@ -311,7 +293,7 @@ phmap::flat_hash_map<std::pair<std::pair<size_t, bool>, std::pair<size_t, bool>>
 	return edgeCoverage;
 }
 
-std::pair<bool, bool> extendBreakpoints(const std::vector<size_t>& readLengths, std::vector<std::vector<bool>>& breakpoints, size_t leftRead, bool leftFw, size_t leftStart, size_t leftEnd, size_t rightRead, bool rightFw, size_t rightStart, size_t rightEnd)
+std::pair<bool, bool> extendBreakpoints(const std::vector<size_t>& readLengths, std::vector<RankBitvector>& breakpoints, size_t leftRead, bool leftFw, size_t leftStart, size_t leftEnd, size_t rightRead, bool rightFw, size_t rightStart, size_t rightEnd)
 {
 	assert(leftFw);
 	assert(leftRead != rightRead);
@@ -323,16 +305,16 @@ std::pair<bool, bool> extendBreakpoints(const std::vector<size_t>& readLengths, 
 	if (!rightFw) rightIndex = readLengths[rightRead] - rightStart;
 	for (size_t i = 0; i <= leftEnd-leftStart; i++)
 	{
-		bool leftbit = breakpoints[leftRead][leftIndex];
-		bool rightbit = breakpoints[rightRead][rightIndex];
+		bool leftbit = breakpoints[leftRead].get(leftIndex);
+		bool rightbit = breakpoints[rightRead].get(rightIndex);
 		if (leftbit && !rightbit)
 		{
-			breakpoints[rightRead][rightIndex] = true;
+			breakpoints[rightRead].set(rightIndex, true);
 			addedAnyRight = true;
 		}
 		else if (!leftbit && rightbit)
 		{
-			breakpoints[leftRead][leftIndex] = true;
+			breakpoints[leftRead].set(leftIndex, true);
 			addedAnyLeft = true;
 		}
 		leftIndex += 1;
@@ -362,17 +344,17 @@ std::pair<size_t, size_t> getMatchSpan(const std::vector<size_t>& readLengths, c
 	}
 }
 
-std::vector<std::vector<bool>> extendBreakpoints(const std::vector<size_t>& readLengths, const std::vector<std::tuple<size_t, size_t, size_t, size_t, size_t, size_t, bool>>& matches)
+std::vector<RankBitvector> extendBreakpoints(const std::vector<size_t>& readLengths, const std::vector<std::tuple<size_t, size_t, size_t, size_t, size_t, size_t, bool>>& matches)
 {
-	std::vector<std::vector<bool>> breakpoints;
+	std::vector<RankBitvector> breakpoints;
 	uint64_t firstBit = 1ull << 63ull;
 	uint64_t mask = firstBit-1;
 	breakpoints.resize(readLengths.size());
 	for (size_t i = 0; i < readLengths.size(); i++)
 	{
-		breakpoints[i].resize(readLengths[i]+1, false);
-		breakpoints[i][0] = true;
-		breakpoints[i].back() = true;
+		breakpoints[i].resize(readLengths[i]+1);
+		breakpoints[i].set(0, true);
+		breakpoints[i].set(readLengths[i], true);
 	}
 	std::vector<std::vector<uint64_t>> relevantMatches;
 	std::vector<std::pair<size_t, size_t>> matchLeftSpan;
@@ -388,17 +370,17 @@ std::vector<std::vector<bool>> extendBreakpoints(const std::vector<size_t>& read
 		relevantMatches[std::get<3>(matches[i])].emplace_back(i + firstBit);
 		matchLeftSpan[i] = getMatchSpan(readLengths, matches[i], std::get<0>(matches[i]));
 		matchRightSpan[i] = getMatchSpan(readLengths, matches[i], std::get<3>(matches[i]));
-		breakpoints[std::get<0>(matches[i])][std::get<1>(matches[i])] = true;
-		breakpoints[std::get<0>(matches[i])][std::get<2>(matches[i])] = true;
+		breakpoints[std::get<0>(matches[i])].set(std::get<1>(matches[i]), true);
+		breakpoints[std::get<0>(matches[i])].set(std::get<2>(matches[i]), true);
 		if (std::get<6>(matches[i]))
 		{
-			breakpoints[std::get<3>(matches[i])][std::get<4>(matches[i])] = true;
-			breakpoints[std::get<3>(matches[i])][std::get<5>(matches[i])] = true;
+			breakpoints[std::get<3>(matches[i])].set(std::get<4>(matches[i]), true);
+			breakpoints[std::get<3>(matches[i])].set(std::get<5>(matches[i]), true);
 		}
 		else
 		{
-			breakpoints[std::get<3>(matches[i])][readLengths[std::get<3>(matches[i])]] = true;
-			breakpoints[std::get<3>(matches[i])][readLengths[std::get<3>(matches[i])]] = true;
+			breakpoints[std::get<3>(matches[i])].set(readLengths[std::get<3>(matches[i])], true);
+			breakpoints[std::get<3>(matches[i])].set(readLengths[std::get<3>(matches[i])], true);
 		}
 	}
 	std::vector<size_t> checkQueue;
@@ -441,6 +423,7 @@ std::vector<std::vector<bool>> extendBreakpoints(const std::vector<size_t>& read
 			}
 		}
 	}
+	for (size_t i = 0; i < breakpoints.size(); i++) breakpoints[i].buildRanks();
 	return breakpoints;
 }
 
@@ -482,7 +465,7 @@ std::vector<size_t> getNodeLengths(const std::vector<std::vector<std::tuple<size
 
 void makeGraph(const std::vector<size_t>& readLengths, const std::vector<std::tuple<size_t, size_t, size_t, size_t, size_t, size_t, bool>>& matches, const size_t minCoverage, const std::string& outputFileName, const size_t k)
 {
-	std::vector<std::vector<bool>> breakpoints = extendBreakpoints(readLengths, matches);
+	std::vector<RankBitvector> breakpoints = extendBreakpoints(readLengths, matches);
 	std::vector<std::vector<std::tuple<size_t, size_t, bool>>> segments;
 	std::vector<std::vector<size_t>> segmentStarts;
 	std::tie(segments, segmentStarts) = mergeSegments(readLengths, matches, breakpoints);
