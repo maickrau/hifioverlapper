@@ -322,12 +322,14 @@ bool extendBreakpoints(const std::vector<size_t>& readLengths, std::vector<std::
 	if (!rightFw) rightIndex = readLengths[rightRead] - rightStart;
 	for (size_t i = 0; i <= leftEnd-leftStart; i++)
 	{
-		if (breakpoints[leftRead][leftIndex] && !breakpoints[rightRead][rightIndex])
+		bool leftbit = breakpoints[leftRead][leftIndex];
+		bool rightbit = breakpoints[rightRead][rightIndex];
+		if (leftbit && !rightbit)
 		{
 			breakpoints[rightRead][rightIndex] = true;
 			addedAny = true;
 		}
-		if (!breakpoints[leftRead][leftIndex] && breakpoints[rightRead][rightIndex])
+		else if (!leftbit && rightbit)
 		{
 			breakpoints[leftRead][leftIndex] = true;
 			addedAny = true;
