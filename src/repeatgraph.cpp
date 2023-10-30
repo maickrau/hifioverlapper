@@ -293,16 +293,14 @@ phmap::flat_hash_map<std::pair<std::pair<size_t, bool>, std::pair<size_t, bool>>
 	return edgeCoverage;
 }
 
-std::pair<bool, bool> extendBreakpoints(const std::vector<size_t>& readLengths, std::vector<RankBitvector>& breakpoints, size_t leftRead, bool leftFw, size_t leftStart, size_t leftEnd, size_t rightRead, bool rightFw, size_t rightStart, size_t rightEnd)
+std::pair<bool, bool> extendBreakpointsFwFw(const std::vector<size_t>& readLengths, std::vector<RankBitvector>& breakpoints, size_t leftRead, size_t leftStart, size_t leftEnd, size_t rightRead, size_t rightStart, size_t rightEnd)
 {
-	assert(leftFw);
 	assert(leftRead != rightRead);
 	assert(leftEnd - leftStart == rightEnd - rightStart);
 	bool addedAnyLeft = false;
 	bool addedAnyRight = false;
 	size_t leftIndex = leftStart;
 	size_t rightIndex = rightStart;
-	if (!rightFw) rightIndex = readLengths[rightRead] - rightStart;
 	for (size_t i = 0; i <= leftEnd-leftStart; i++)
 	{
 		bool leftbit = breakpoints[leftRead].get(leftIndex);
@@ -318,7 +316,35 @@ std::pair<bool, bool> extendBreakpoints(const std::vector<size_t>& readLengths, 
 			addedAnyLeft = true;
 		}
 		leftIndex += 1;
-		rightIndex += (rightFw ? 1 : -1);
+		rightIndex += 1;
+	}
+	return std::make_pair(addedAnyLeft, addedAnyRight);
+}
+
+std::pair<bool, bool> extendBreakpointsFwBw(const std::vector<size_t>& readLengths, std::vector<RankBitvector>& breakpoints, size_t leftRead, size_t leftStart, size_t leftEnd, size_t rightRead, size_t rightStart, size_t rightEnd)
+{
+	assert(leftRead != rightRead);
+	assert(leftEnd - leftStart == rightEnd - rightStart);
+	bool addedAnyLeft = false;
+	bool addedAnyRight = false;
+	size_t leftIndex = leftStart;
+	size_t rightIndex = readLengths[rightRead] - rightStart;
+	for (size_t i = 0; i <= leftEnd-leftStart; i++)
+	{
+		bool leftbit = breakpoints[leftRead].get(leftIndex);
+		bool rightbit = breakpoints[rightRead].get(rightIndex);
+		if (leftbit && !rightbit)
+		{
+			breakpoints[rightRead].set(rightIndex, true);
+			addedAnyRight = true;
+		}
+		else if (!leftbit && rightbit)
+		{
+			breakpoints[leftRead].set(leftIndex, true);
+			addedAnyLeft = true;
+		}
+		leftIndex += 1;
+		rightIndex -= 1;
 	}
 	return std::make_pair(addedAnyLeft, addedAnyRight);
 }
@@ -359,13 +385,24 @@ std::vector<RankBitvector> extendBreakpoints(const std::vector<size_t>& readLeng
 	std::vector<std::vector<uint64_t>> relevantMatches;
 	std::vector<std::pair<size_t, size_t>> matchLeftSpan;
 	std::vector<std::pair<size_t, size_t>> matchRightSpan;
-	std::vector<bool> inQueue;
-	inQueue.resize(matches.size(), true);
 	matchLeftSpan.resize(matches.size());
 	matchRightSpan.resize(matches.size());
 	relevantMatches.resize(readLengths.size());
+	size_t firstFwBwMatch = matches.size();
 	for (size_t i = 0; i < matches.size(); i++)
 	{
+		if (std::get<6>(matches[i]))
+		{
+			assert(firstFwBwMatch == matches.size());
+		}
+		else
+		{
+			if (firstFwBwMatch == matches.size())
+			{
+				firstFwBwMatch = i;
+			}
+			assert(i >= firstFwBwMatch);
+		}
 		relevantMatches[std::get<0>(matches[i])].emplace_back(i);
 		relevantMatches[std::get<3>(matches[i])].emplace_back(i + firstBit);
 		matchLeftSpan[i] = getMatchSpan(readLengths, matches[i], std::get<0>(matches[i]));
@@ -383,17 +420,39 @@ std::vector<RankBitvector> extendBreakpoints(const std::vector<size_t>& readLeng
 			breakpoints[std::get<3>(matches[i])].set(readLengths[std::get<3>(matches[i])], true);
 		}
 	}
-	std::vector<size_t> checkQueue;
-	for (size_t i = 0; i < matches.size(); i++)
+	std::vector<bool> inQueue;
+	inQueue.resize(matches.size(), true);
+	std::vector<size_t> fwfwCheckQueue;
+	std::vector<size_t> fwbwCheckQueue;
+	for (size_t i = 0; i < firstFwBwMatch; i++)
 	{
-		checkQueue.emplace_back(i);
+		fwfwCheckQueue.emplace_back(i);
 	}
-	while (checkQueue.size() >= 1)
+	for (size_t i = firstFwBwMatch; i < matches.size(); i++)
 	{
-		size_t matchi = checkQueue.back();
-		inQueue[matchi] = false;
-		checkQueue.pop_back();
-		std::pair<bool, bool> addedAny = extendBreakpoints(readLengths, breakpoints, std::get<0>(matches[matchi]), true, std::get<1>(matches[matchi]), std::get<2>(matches[matchi]), std::get<3>(matches[matchi]), std::get<6>(matches[matchi]), std::get<4>(matches[matchi]), std::get<5>(matches[matchi]));
+		fwbwCheckQueue.emplace_back(i);
+	}
+	while (fwfwCheckQueue.size() >= 1 || fwbwCheckQueue.size() >= 1)
+	{
+		size_t matchi;
+		std::pair<bool, bool> addedAny;
+		if (fwfwCheckQueue.size() >= 1)
+		{
+			matchi = fwfwCheckQueue.back();
+			assert(std::get<6>(matches[matchi]));
+			inQueue[matchi] = false;
+			fwfwCheckQueue.pop_back();
+			addedAny = extendBreakpointsFwFw(readLengths, breakpoints, std::get<0>(matches[matchi]), std::get<1>(matches[matchi]), std::get<2>(matches[matchi]), std::get<3>(matches[matchi]), std::get<4>(matches[matchi]), std::get<5>(matches[matchi]));
+		}
+		else
+		{
+			assert(fwbwCheckQueue.size() >= 1);
+			matchi = fwbwCheckQueue.back();
+			assert(!std::get<6>(matches[matchi]));
+			inQueue[matchi] = false;
+			fwbwCheckQueue.pop_back();
+			addedAny = extendBreakpointsFwBw(readLengths, breakpoints, std::get<0>(matches[matchi]), std::get<1>(matches[matchi]), std::get<2>(matches[matchi]), std::get<3>(matches[matchi]), std::get<4>(matches[matchi]), std::get<5>(matches[matchi]));
+		}
 		if (addedAny.first)
 		{
 			for (auto aln : relevantMatches[std::get<0>(matches[matchi])])
@@ -404,7 +463,14 @@ std::vector<RankBitvector> extendBreakpoints(const std::vector<size_t>& readLeng
 				bool isRight = (aln & firstBit) != 0;
 				if (isRight && (matchRightSpan[rawAln].first > matchLeftSpan[matchi].second || matchRightSpan[rawAln].second < matchLeftSpan[matchi].first)) continue;
 				if (!isRight && (matchLeftSpan[rawAln].first > matchLeftSpan[matchi].second || matchLeftSpan[rawAln].second < matchLeftSpan[matchi].first)) continue;
-				checkQueue.push_back(rawAln);
+				if (rawAln < firstFwBwMatch)
+				{
+					fwfwCheckQueue.push_back(rawAln);
+				}
+				else
+				{
+					fwbwCheckQueue.push_back(rawAln);
+				}
 				inQueue[rawAln] = true;
 			}
 		}
@@ -418,7 +484,14 @@ std::vector<RankBitvector> extendBreakpoints(const std::vector<size_t>& readLeng
 				bool isRight = (aln & firstBit) != 0;
 				if (isRight && (matchRightSpan[rawAln].first > matchRightSpan[matchi].second || matchRightSpan[rawAln].second < matchRightSpan[matchi].first)) continue;
 				if (!isRight && (matchLeftSpan[rawAln].first > matchRightSpan[matchi].second || matchLeftSpan[rawAln].second < matchRightSpan[matchi].first)) continue;
-				checkQueue.push_back(rawAln);
+				if (rawAln < firstFwBwMatch)
+				{
+					fwfwCheckQueue.push_back(rawAln);
+				}
+				else
+				{
+					fwbwCheckQueue.push_back(rawAln);
+				}
 				inQueue[rawAln] = true;
 			}
 		}
@@ -606,6 +679,8 @@ int main(int argc, char** argv)
 		assert(leftFw);
 		mappingmatches.emplace_back(left, leftstart, leftend+1, right, rightstart, rightend+1, rightFw); // param coordinates are inclusive, switch to exclusive
 	});
+	// fw-fw matches first, fw-bw matches later
+	std::stable_sort(mappingmatches.begin(), mappingmatches.end(), [](auto left, auto right){ return std::get<6>(left) && !std::get<6>(right); });
 	std::vector<std::tuple<size_t, size_t, size_t, size_t, size_t, size_t, bool>> kmermatches;
 	std::cerr << mappingmatches.size() << " mapping matches" << std::endl;
 	for (auto t : mappingmatches)
