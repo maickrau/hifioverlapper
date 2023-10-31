@@ -6,6 +6,8 @@
 #include "ReadStorage.h"
 #include "MatchIndex.h"
 
+size_t popcount(uint64_t x);
+
 // add if missing
 std::pair<size_t, bool> getBreakpoint(std::vector<std::tuple<size_t, size_t, size_t, bool>>& readBreakpoints, size_t readIndex, size_t wantedPos)
 {
@@ -293,31 +295,55 @@ phmap::flat_hash_map<std::pair<std::pair<size_t, bool>, std::pair<size_t, bool>>
 	return edgeCoverage;
 }
 
+
 std::pair<bool, bool> extendBreakpointsFwFw(const std::vector<size_t>& readLengths, std::vector<RankBitvector>& breakpoints, size_t leftRead, size_t leftStart, size_t leftEnd, size_t rightRead, size_t rightStart, size_t rightEnd)
 {
 	assert(leftRead != rightRead);
 	assert(leftEnd - leftStart == rightEnd - rightStart);
+	std::vector<uint64_t>& leftBits = breakpoints[leftRead].getBits();
+	std::vector<uint64_t>& rightBits = breakpoints[rightRead].getBits();
+	size_t pos = 0;
 	bool addedAnyLeft = false;
 	bool addedAnyRight = false;
-	size_t leftIndex = leftStart;
-	size_t rightIndex = rightStart;
-	for (size_t i = 0; i <= leftEnd-leftStart; i++)
+	while (pos <= leftEnd - leftStart)
 	{
-		bool leftbit = breakpoints[leftRead].get(leftIndex);
-		bool rightbit = breakpoints[rightRead].get(rightIndex);
-		if (leftbit && !rightbit)
+		size_t leftIndex = (leftStart + pos) / 64;
+		size_t leftOffset = (leftStart + pos) % 64;
+		size_t rightIndex = (rightStart + pos) / 64;
+		size_t rightOffset = (rightStart + pos) % 64;
+		size_t availableLeft = 64 - leftOffset;
+		size_t availableRight = 64 - rightOffset;
+		size_t take = std::min(availableLeft, availableRight);
+		take = std::min(take, (leftEnd-leftStart) - pos + 1);
+		assert(take <= 64);
+		assert(take >= 1);
+		uint64_t leftGot = leftBits[leftIndex] >> leftOffset;
+		uint64_t rightGot = rightBits[rightIndex] >> rightOffset;
+		uint64_t mask = 0xFFFFFFFFFFFFFFFFull;
+		if (take < 64) mask = (1ull << (take)) - 1;
+		assert(popcount(mask) == take);
+		assert((mask & 1) == (1));
+		leftGot &= mask;
+		rightGot &= mask;
+		if ((leftGot ^ rightGot) == 0)
 		{
-			breakpoints[rightRead].set(rightIndex, true);
-			addedAnyRight = true;
+			pos += take;
+			continue;
 		}
-		else if (!leftbit && rightbit)
+		if ((leftGot & rightGot) != rightGot)
 		{
-			breakpoints[leftRead].set(leftIndex, true);
 			addedAnyLeft = true;
 		}
-		leftIndex += 1;
-		rightIndex += 1;
+		if ((leftGot & rightGot) != leftGot)
+		{
+			addedAnyRight = true;
+		}
+		uint64_t addThese = leftGot | rightGot;
+		leftBits[leftIndex] |= (addThese << leftOffset);
+		rightBits[rightIndex] |= (addThese << rightOffset);
+		pos += take;
 	}
+	assert(pos == leftEnd - leftStart + 1);
 	return std::make_pair(addedAnyLeft, addedAnyRight);
 }
 
