@@ -667,11 +667,17 @@ int main(int argc, char** argv)
 	size_t numWindowChunks = matchIndex.numWindowChunks();
 	size_t numUniqueChunks = matchIndex.numUniqueChunks();
 	matchIndex.clearConstructionVariablesAndCompact();
-	const std::vector<size_t>& readLengths = storage.getRawReadLengths();
+	const std::vector<size_t>& readBasepairLengths = storage.getRawReadLengths();
+	std::vector<size_t> readKmerLengths;
+	readKmerLengths.resize(readBasepairLengths.size());
+	for (size_t i = 0; i < readBasepairLengths.size(); i++)
+	{
+		readKmerLengths[i] = readBasepairLengths[i] + 1 - graphk;
+	}
 	const std::vector<std::string>& readNames = storage.getNames();
 	std::mutex printMutex;
 	std::vector<std::tuple<size_t, size_t, size_t, size_t, size_t, size_t, bool>> mappingmatches;
-	auto result = matchIndex.iterateMatchChains(numThreads, storage.getRawReadLengths(), [&printMutex, &mappingmatches, minAlignmentLength, &readLengths](const size_t left, const size_t leftstart, const size_t leftend, const bool leftFw, const size_t right, const size_t rightstart, const size_t rightend, const bool rightFw)
+	auto result = matchIndex.iterateMatchChains(numThreads, storage.getRawReadLengths(), [&printMutex, &mappingmatches, minAlignmentLength](const size_t left, const size_t leftstart, const size_t leftend, const bool leftFw, const size_t right, const size_t rightstart, const size_t rightend, const bool rightFw)
 	{
 		if (leftend+1-leftstart < minAlignmentLength) return;
 		if (rightend+1-rightstart < minAlignmentLength) return;
@@ -698,7 +704,7 @@ int main(int argc, char** argv)
 		kmermatches.insert(kmermatches.end(), matches.begin(), matches.end());
 	}
 	std::cerr << kmermatches.size() << " kmer matches" << std::endl;
-	makeGraph(readLengths, kmermatches, minCoverage, "graph.gfa", graphk);
+	makeGraph(readKmerLengths, kmermatches, minCoverage, "graph.gfa", graphk);
 	std::cerr << result.numberReads << " reads" << std::endl;
 	std::cerr << numWindowChunks << " distinct windowchunks" << std::endl;
 	std::cerr << result.totalReadChunkMatches << " read-windowchunk matches (except unique)" << std::endl;
