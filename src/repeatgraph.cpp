@@ -748,15 +748,37 @@ std::vector<std::tuple<size_t, size_t, size_t, size_t, size_t, size_t, bool>> ge
 			rightKmer += 3-readSequences[right].get(readSequences[right].size()-1-(rightStart+i));
 		}
 	}
-	std::vector<std::pair<size_t, size_t>> currentMatches;
+	std::vector<std::pair<size_t, size_t>> currentMatchesPerDiagonal;
+	size_t diagonalCount = 2*w+1;
+	size_t zeroDiagonal = w;
+	if (leftEnd-leftStart > rightEnd-rightStart)
+	{
+		diagonalCount += (leftEnd-leftStart)-(rightEnd-rightStart);
+		zeroDiagonal = w + (leftEnd-leftStart)-(rightEnd-rightStart);
+	}
+	if (rightEnd-rightStart > leftEnd-leftStart) diagonalCount += (rightEnd-rightStart)-(leftEnd-leftStart);
+	currentMatchesPerDiagonal.resize(diagonalCount, std::make_pair(std::numeric_limits<size_t>::max(), std::numeric_limits<size_t>::max()));
+	size_t minDiagonal = zeroDiagonal - w;
+	size_t maxDiagonal = zeroDiagonal + w;
 	for (auto pos : kmerPositionsInLeft[rightKmer])
 	{
-		size_t interpolatedPos = (double)pos / (double)(leftEnd-leftStart) * (double)(rightEnd-rightStart);
-		if (interpolatedPos > w) continue;
-		currentMatches.emplace_back(pos, 1);
+		if (pos > zeroDiagonal) continue;
+		if (zeroDiagonal - pos >= diagonalCount) continue;
+		size_t diagonal = zeroDiagonal - pos;
+		if (diagonal < minDiagonal) continue;
+		if (diagonal > maxDiagonal) continue;
+		currentMatchesPerDiagonal[diagonal].first = 0;
+		currentMatchesPerDiagonal[diagonal].second = 1;
 	}
 	for (size_t rightpos = k; rightpos < rightEnd-rightStart; rightpos++)
 	{
+		size_t rightKmerPos = rightpos-k+1;
+		size_t interpolatedLeftPos = (double)(rightKmerPos) / (double)(rightEnd-rightStart) * (double)(leftEnd-leftStart);
+		assert(rightKmerPos + zeroDiagonal >= interpolatedLeftPos + w);
+		assert(rightKmerPos + zeroDiagonal + w >= interpolatedLeftPos);
+		minDiagonal = rightKmerPos + zeroDiagonal - interpolatedLeftPos - w;
+		maxDiagonal = rightKmerPos + zeroDiagonal - interpolatedLeftPos + w;
+		assert(maxDiagonal <= diagonalCount);
 		rightKmer <<= 2;
 		rightKmer &= mask;
 		if (rightFw)
@@ -767,38 +789,39 @@ std::vector<std::tuple<size_t, size_t, size_t, size_t, size_t, size_t, bool>> ge
 		{
 			rightKmer += 3-readSequences[right].get(readSequences[right].size()-1-(rightStart+rightpos));
 		}
-		phmap::flat_hash_set<size_t> poses;
 		for (auto pos : kmerPositionsInLeft[rightKmer])
 		{
-			size_t interpolatedPos = (double)pos / (double)(leftEnd-leftStart) * (double)(rightEnd-rightStart);
-			if (interpolatedPos > rightpos-k+1+w) continue;
-			if (rightpos-k+1 > interpolatedPos+w) continue;
-			poses.emplace(pos);
-		}
-		phmap::flat_hash_set<size_t> foundPoses;
-		for (size_t i = currentMatches.size()-1; i < currentMatches.size(); i--)
-		{
-			if (poses.count(currentMatches[i].first+currentMatches[i].second) == 0)
+			if (pos > zeroDiagonal + rightKmerPos) continue;
+			if (zeroDiagonal + rightKmerPos - pos >= diagonalCount) continue;
+			size_t diagonal = zeroDiagonal + rightKmerPos - pos;
+			if (diagonal < minDiagonal || diagonal > maxDiagonal) continue;
+			if (currentMatchesPerDiagonal[diagonal].first != std::numeric_limits<size_t>::max() && currentMatchesPerDiagonal[diagonal].first + currentMatchesPerDiagonal[diagonal].second == rightKmerPos)
 			{
-				result.emplace_back(left, leftStart + currentMatches[i].first, leftStart + currentMatches[i].first + currentMatches[i].second, right, rightStart + rightpos + 1 - k - currentMatches[i].second, rightStart + rightpos + 1 - k, rightFw);
-				std::swap(currentMatches.back(), currentMatches[i]);
-				currentMatches.pop_back();
+				currentMatchesPerDiagonal[diagonal].second += 1;
+				continue;
 			}
-			else
+			if (currentMatchesPerDiagonal[diagonal].first != std::numeric_limits<size_t>::max())
 			{
-				foundPoses.insert(currentMatches[i].first+currentMatches[i].second);
-				currentMatches[i].second += 1;
+				assert(currentMatchesPerDiagonal[diagonal].second != std::numeric_limits<size_t>::max());
+				assert(currentMatchesPerDiagonal[diagonal].first + zeroDiagonal >= diagonal);
+				size_t leftMatchStart = leftStart + currentMatchesPerDiagonal[diagonal].first + zeroDiagonal - diagonal;
+				size_t rightMatchStart = rightStart + currentMatchesPerDiagonal[diagonal].first;
+				size_t length = currentMatchesPerDiagonal[diagonal].second;
+				result.emplace_back(left, leftMatchStart, leftMatchStart + length, right, rightMatchStart, rightMatchStart + length, rightFw);
 			}
-		}
-		for (auto pos : poses)
-		{
-			if (foundPoses.count(pos) == 1) continue;
-			currentMatches.emplace_back(pos, 1);
+			currentMatchesPerDiagonal[diagonal].first = rightKmerPos;
+			currentMatchesPerDiagonal[diagonal].second = 1;
 		}
 	}
-	for (auto match : currentMatches)
+	for (size_t diagonal = 0; diagonal < diagonalCount; diagonal++)
 	{
-		result.emplace_back(left, leftStart + match.first, leftStart + match.first + match.second, right, rightStart + (rightEnd-rightStart) + 1 - k - match.second, rightStart + (rightEnd-rightStart) + 1 - k, rightFw);
+		if (currentMatchesPerDiagonal[diagonal].first == std::numeric_limits<size_t>::max()) continue;
+		assert(currentMatchesPerDiagonal[diagonal].second != std::numeric_limits<size_t>::max());
+		assert(currentMatchesPerDiagonal[diagonal].first + zeroDiagonal >= diagonal);
+		size_t leftMatchStart = leftStart + currentMatchesPerDiagonal[diagonal].first + zeroDiagonal - diagonal;
+		size_t rightMatchStart = rightStart + currentMatchesPerDiagonal[diagonal].first;
+		size_t length = currentMatchesPerDiagonal[diagonal].second;
+		result.emplace_back(left, leftMatchStart, leftMatchStart + length, right, rightMatchStart, rightMatchStart + length, rightFw);
 	}
 	return result;
 }
@@ -865,6 +888,7 @@ int main(int argc, char** argv)
 			assert(std::get<5>(match) > std::get<4>(match));
 			assert(std::get<4>(match) >= std::get<4>(t));
 			assert(std::get<5>(match) <= std::get<5>(t));
+			// std::cout << readNames[std::get<0>(match)] << "\t" << readKmerLengths[std::get<0>(match)] << "\t" << std::get<1>(match) << "\t" << std::get<2>(match) << "\t" << readNames[std::get<3>(match)] << "\t" << readKmerLengths[std::get<3>(match)] << "\t" << std::get<4>(match) << "\t" << std::get<5>(match) << "\t" << (std::get<6>(match) ? "fw" : "bw") << std::endl;
 		}
 		kmermatches.insert(kmermatches.end(), matches.begin(), matches.end());
 	}
