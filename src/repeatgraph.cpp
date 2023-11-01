@@ -725,48 +725,90 @@ void iterateKmerMatchPositions(const uint64_t kmer, const phmap::flat_hash_map<u
 	for (auto pos : found2->second) callback(pos);
 }
 
+template <typename F1, typename F2>
+void iterateSyncmers(const std::vector<TwobitString>& readSequences, const size_t k, const size_t w, const size_t maxLen, F1 callback, F2 getchar)
+{
+	static std::vector<std::tuple<size_t, uint64_t>> smerOrder;
+	assert(w < k);
+	assert(w >= 3);
+	const uint64_t mask = (1ull << (2ull*k)) - 1;
+	const size_t s = k-w+1;
+	const uint64_t smask = (1ull << (2ull*s)) - 1;
+	uint64_t kmer = 0;
+	uint64_t smer = 0;
+	for (size_t i = 0; i < s; i++)
+	{
+		uint64_t c = getchar(i);
+		smer <<= 2;
+		smer += c;
+	}
+	kmer = smer;
+	smerOrder.emplace_back(0, smer);
+	for (size_t i = s; i < k; i++)
+	{
+		uint64_t c = getchar(i);
+		kmer <<= 2;
+		kmer += c;
+		smer <<= 2;
+		smer += c;
+		smer &= smask;
+		while (smerOrder.size() > 0 && std::get<1>(smerOrder.back()) > smer) smerOrder.pop_back();
+		smerOrder.emplace_back(i-s+1, smer);
+	}
+	if ((std::get<0>(smerOrder.front()) == 0) || (std::get<1>(smerOrder.back()) == std::get<1>(smerOrder.front()) && std::get<0>(smerOrder.back()) == w-1))
+	{
+		callback(kmer, 0);
+	}
+	for (size_t i = k; i < maxLen; i++)
+	{
+		uint64_t c = getchar(i);
+		kmer <<= 2;
+		kmer += c;
+		kmer &= mask;
+		smer <<= 2;
+		smer += c;
+		smer &= smask;
+		while (smerOrder.size() > 0 && std::get<1>(smerOrder.back()) > smer) smerOrder.pop_back();
+		while (smerOrder.size() > 0 && std::get<0>(smerOrder.front()) <= i-s+1-w) smerOrder.erase(smerOrder.begin());
+		smerOrder.emplace_back(i-s+1, smer);
+		if ((std::get<0>(smerOrder.front()) == i-s+2-w) || (std::get<1>(smerOrder.back()) == std::get<1>(smerOrder.front()) && std::get<0>(smerOrder.back()) == i-s+1))
+		{
+			callback(kmer, i-k+1);
+		}
+	}
+	smerOrder.clear();
+}
+
+template <typename F>
+void iterateSyncmers(const std::vector<TwobitString>& readSequences, const size_t k, const size_t w, const size_t read, const size_t readStart, const size_t readEnd, const bool fw, F callback)
+{
+	if (fw)
+	{
+		iterateSyncmers(readSequences, k, w, readEnd-readStart, callback, [&readSequences, read, readStart, readEnd](size_t index){ return readSequences[read].get(readStart+index); });
+	}
+	else
+	{
+		iterateSyncmers(readSequences, k, w, readEnd-readStart, callback, [&readSequences, read, readStart, readEnd](size_t index){ return 3-readSequences[read].get(readSequences[read].size() - 1 - (readStart+index)); });
+	}
+}
+
 std::vector<std::tuple<size_t, size_t, size_t, size_t, size_t, size_t, bool>> getKmerMatches(const std::vector<TwobitString>& readSequences, const size_t left, const size_t leftStart, const size_t leftEnd, const size_t right, const size_t rightStart, const size_t rightEnd, const bool rightFw, const size_t k, const size_t w)
 {
 	assert(k <= 31);
 	assert(k % 2 == 1);
 	phmap::flat_hash_map<uint64_t, uint32_t> firstKmerPositionInLeft;
 	phmap::flat_hash_map<uint64_t, std::vector<uint32_t>> extraKmerPositionsInLeft;
-	uint64_t mask = (1ull << (2ull*k)) - 1;
-	uint64_t leftKmer = 0;
-	for (size_t i = 0; i < k; i++)
+	iterateSyncmers(readSequences, k, 20, left, leftStart, leftEnd, true, [&firstKmerPositionInLeft, &extraKmerPositionsInLeft](const size_t kmer, const size_t pos)
 	{
-		leftKmer <<= 2;
-		leftKmer += readSequences[left].get(leftStart+i);
-	}
-	firstKmerPositionInLeft[leftKmer] = 0;
-	std::vector<std::tuple<size_t, size_t, size_t, size_t, size_t, size_t, bool>> result;
-	for (size_t i = k; i < leftEnd-leftStart; i++)
-	{
-		leftKmer <<= 2;
-		leftKmer &= mask;
-		leftKmer += readSequences[left].get(leftStart+i);
-		if (firstKmerPositionInLeft.count(leftKmer) == 0)
+		if (firstKmerPositionInLeft.count(kmer) == 0)
 		{
-			firstKmerPositionInLeft[leftKmer] = i-k+1;
+			firstKmerPositionInLeft[kmer] = pos;
 		}
 		else
 		{
-			extraKmerPositionsInLeft[leftKmer].push_back(i-k+1);
+			extraKmerPositionsInLeft[kmer].push_back(pos);
 		}
-	}
-	uint64_t rightKmer = 0;
-	for (size_t i = 0; i < k; i++)
-	{
-		rightKmer <<= 2;
-		if (rightFw)
-		{
-			rightKmer += readSequences[right].get(rightStart+i);
-		}
-		else
-		{
-			rightKmer += 3-readSequences[right].get(readSequences[right].size()-1-(rightStart+i));
-		}
-	}
+	});
 	std::vector<std::pair<size_t, size_t>> currentMatchesPerDiagonal;
 	size_t diagonalCount = 2*w+1;
 	size_t zeroDiagonal = w;
@@ -777,69 +819,49 @@ std::vector<std::tuple<size_t, size_t, size_t, size_t, size_t, size_t, bool>> ge
 	}
 	if (rightEnd-rightStart > leftEnd-leftStart) diagonalCount += (rightEnd-rightStart)-(leftEnd-leftStart);
 	currentMatchesPerDiagonal.resize(diagonalCount, std::make_pair(std::numeric_limits<size_t>::max(), std::numeric_limits<size_t>::max()));
-	size_t minDiagonal = zeroDiagonal - w;
-	size_t maxDiagonal = zeroDiagonal + w;
-	iterateKmerMatchPositions(rightKmer, firstKmerPositionInLeft, extraKmerPositionsInLeft, [zeroDiagonal, diagonalCount, minDiagonal, maxDiagonal, &currentMatchesPerDiagonal](const size_t pos)
+	std::vector<std::tuple<size_t, size_t, size_t, size_t, size_t, size_t, bool>> result;
+	iterateSyncmers(readSequences, k, 20, right, rightStart, rightEnd, rightFw, [&firstKmerPositionInLeft, &extraKmerPositionsInLeft, &currentMatchesPerDiagonal, diagonalCount, zeroDiagonal, rightFw, left, right, leftStart, rightStart, leftEnd, rightEnd, w, k, &result](const size_t kmer, const size_t rightPos)
 	{
-		if (pos > zeroDiagonal) return;
-		if (zeroDiagonal - pos >= diagonalCount) return;
-		size_t diagonal = zeroDiagonal - pos;
-		if (diagonal < minDiagonal) return;
-		if (diagonal > maxDiagonal) return;
-		currentMatchesPerDiagonal[diagonal].first = 0;
-		currentMatchesPerDiagonal[diagonal].second = 1;
-	});
-	for (size_t rightpos = k; rightpos < rightEnd-rightStart; rightpos++)
-	{
-		size_t rightKmerPos = rightpos-k+1;
-		size_t interpolatedLeftPos = (double)(rightKmerPos) / (double)(rightEnd-rightStart) * (double)(leftEnd-leftStart);
-		assert(rightKmerPos + zeroDiagonal >= interpolatedLeftPos + w);
-		assert(rightKmerPos + zeroDiagonal + w >= interpolatedLeftPos);
-		minDiagonal = rightKmerPos + zeroDiagonal - interpolatedLeftPos - w;
-		maxDiagonal = rightKmerPos + zeroDiagonal - interpolatedLeftPos + w;
+		size_t interpolatedLeftPos = (double)(rightPos) / (double)(rightEnd-rightStart) * (double)(leftEnd-leftStart);
+		assert(rightPos + zeroDiagonal >= interpolatedLeftPos + w);
+		assert(rightPos + zeroDiagonal + w >= interpolatedLeftPos);
+		size_t minDiagonal = rightPos + zeroDiagonal - interpolatedLeftPos - w;
+		size_t maxDiagonal = rightPos + zeroDiagonal - interpolatedLeftPos + w;
 		assert(maxDiagonal <= diagonalCount);
-		rightKmer <<= 2;
-		rightKmer &= mask;
-		if (rightFw)
+		iterateKmerMatchPositions(kmer, firstKmerPositionInLeft, extraKmerPositionsInLeft, [zeroDiagonal, rightPos, minDiagonal, maxDiagonal, &currentMatchesPerDiagonal, &result, rightFw, left, right, leftStart, rightStart, diagonalCount, k](const size_t leftPos)
 		{
-			rightKmer += readSequences[right].get(rightStart+rightpos);
-		}
-		else
-		{
-			rightKmer += 3-readSequences[right].get(readSequences[right].size()-1-(rightStart+rightpos));
-		}
-		iterateKmerMatchPositions(rightKmer, firstKmerPositionInLeft, extraKmerPositionsInLeft, [zeroDiagonal, rightKmerPos, minDiagonal, maxDiagonal, &currentMatchesPerDiagonal, &result, rightFw, left, right, leftStart, rightStart, diagonalCount](const size_t pos)
-		{
-			if (pos > zeroDiagonal + rightKmerPos) return;
-			if (zeroDiagonal + rightKmerPos - pos >= diagonalCount) return;
-			size_t diagonal = zeroDiagonal + rightKmerPos - pos;
+			if (leftPos > zeroDiagonal + rightPos) return;
+			if (zeroDiagonal + rightPos - leftPos >= diagonalCount) return;
+			size_t diagonal = zeroDiagonal + rightPos - leftPos;
 			if (diagonal < minDiagonal || diagonal > maxDiagonal) return;
-			if (currentMatchesPerDiagonal[diagonal].first != std::numeric_limits<size_t>::max() && currentMatchesPerDiagonal[diagonal].first + currentMatchesPerDiagonal[diagonal].second == rightKmerPos)
+			if (currentMatchesPerDiagonal[diagonal].first != std::numeric_limits<size_t>::max() && currentMatchesPerDiagonal[diagonal].second + k > rightPos)
 			{
-				currentMatchesPerDiagonal[diagonal].second += 1;
+				currentMatchesPerDiagonal[diagonal].second = rightPos+1;
 				return;
 			}
 			if (currentMatchesPerDiagonal[diagonal].first != std::numeric_limits<size_t>::max())
 			{
 				assert(currentMatchesPerDiagonal[diagonal].second != std::numeric_limits<size_t>::max());
+				assert(currentMatchesPerDiagonal[diagonal].second > currentMatchesPerDiagonal[diagonal].first);
 				assert(currentMatchesPerDiagonal[diagonal].first + zeroDiagonal >= diagonal);
 				size_t leftMatchStart = leftStart + currentMatchesPerDiagonal[diagonal].first + zeroDiagonal - diagonal;
 				size_t rightMatchStart = rightStart + currentMatchesPerDiagonal[diagonal].first;
-				size_t length = currentMatchesPerDiagonal[diagonal].second;
+				size_t length = currentMatchesPerDiagonal[diagonal].second - currentMatchesPerDiagonal[diagonal].first;
 				result.emplace_back(left, leftMatchStart, leftMatchStart + length, right, rightMatchStart, rightMatchStart + length, rightFw);
 			}
-			currentMatchesPerDiagonal[diagonal].first = rightKmerPos;
-			currentMatchesPerDiagonal[diagonal].second = 1;
+			currentMatchesPerDiagonal[diagonal].first = rightPos;
+			currentMatchesPerDiagonal[diagonal].second = rightPos+1;
 		});
-	}
+	});
 	for (size_t diagonal = 0; diagonal < diagonalCount; diagonal++)
 	{
 		if (currentMatchesPerDiagonal[diagonal].first == std::numeric_limits<size_t>::max()) continue;
 		assert(currentMatchesPerDiagonal[diagonal].second != std::numeric_limits<size_t>::max());
+		assert(currentMatchesPerDiagonal[diagonal].second > currentMatchesPerDiagonal[diagonal].first);
 		assert(currentMatchesPerDiagonal[diagonal].first + zeroDiagonal >= diagonal);
 		size_t leftMatchStart = leftStart + currentMatchesPerDiagonal[diagonal].first + zeroDiagonal - diagonal;
 		size_t rightMatchStart = rightStart + currentMatchesPerDiagonal[diagonal].first;
-		size_t length = currentMatchesPerDiagonal[diagonal].second;
+		size_t length = currentMatchesPerDiagonal[diagonal].second - currentMatchesPerDiagonal[diagonal].first;
 		result.emplace_back(left, leftMatchStart, leftMatchStart + length, right, rightMatchStart, rightMatchStart + length, rightFw);
 	}
 	return result;
