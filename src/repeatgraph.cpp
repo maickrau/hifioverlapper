@@ -717,10 +717,12 @@ void makeGraph(const std::vector<size_t>& readLengths, const std::vector<std::tu
 template <typename F>
 void iterateKmerMatchPositions(const uint64_t kmer, const phmap::flat_hash_map<uint64_t, size_t>& firstPositions, const phmap::flat_hash_map<uint64_t, std::vector<size_t>>& extraPositions, F callback)
 {
-	if (firstPositions.count(kmer) == 0) return;
-	callback(firstPositions.at(kmer));
-	if (extraPositions.count(kmer) == 0) return;
-	for (auto pos : extraPositions.at(kmer)) callback(pos);
+	auto found = firstPositions.find(kmer);
+	if (found == firstPositions.end()) return;
+	callback(found->second);
+	auto found2 = extraPositions.find(kmer);
+	if (found2 == extraPositions.end()) return;
+	for (auto pos : found2->second) callback(pos);
 }
 
 std::vector<std::tuple<size_t, size_t, size_t, size_t, size_t, size_t, bool>> getKmerMatches(const std::vector<TwobitString>& readSequences, const size_t left, const size_t leftStart, const size_t leftEnd, const size_t right, const size_t rightStart, const size_t rightEnd, const bool rightFw, const size_t k, const size_t w)
