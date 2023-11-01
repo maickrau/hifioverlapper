@@ -714,11 +714,21 @@ void makeGraph(const std::vector<size_t>& readLengths, const std::vector<std::tu
 	writeGraph(outputFileName, nodeCoverage, nodeLength, edgeCoverages, minCoverage, k);
 }
 
+template <typename F>
+void iterateKmerMatchPositions(const uint64_t kmer, const phmap::flat_hash_map<uint64_t, size_t>& firstPositions, const phmap::flat_hash_map<uint64_t, std::vector<size_t>>& extraPositions, F callback)
+{
+	if (firstPositions.count(kmer) == 0) return;
+	callback(firstPositions.at(kmer));
+	if (extraPositions.count(kmer) == 0) return;
+	for (auto pos : extraPositions.at(kmer)) callback(pos);
+}
+
 std::vector<std::tuple<size_t, size_t, size_t, size_t, size_t, size_t, bool>> getKmerMatches(const std::vector<TwobitString>& readSequences, const size_t left, const size_t leftStart, const size_t leftEnd, const size_t right, const size_t rightStart, const size_t rightEnd, const bool rightFw, const size_t k, const size_t w)
 {
 	assert(k <= 31);
 	assert(k % 2 == 1);
-	phmap::flat_hash_map<uint64_t, std::vector<size_t>> kmerPositionsInLeft;
+	phmap::flat_hash_map<uint64_t, size_t> firstKmerPositionInLeft;
+	phmap::flat_hash_map<uint64_t, std::vector<size_t>> extraKmerPositionsInLeft;
 	uint64_t mask = (1ull << (2ull*k)) - 1;
 	uint64_t leftKmer = 0;
 	for (size_t i = 0; i < k; i++)
@@ -726,14 +736,21 @@ std::vector<std::tuple<size_t, size_t, size_t, size_t, size_t, size_t, bool>> ge
 		leftKmer <<= 2;
 		leftKmer += readSequences[left].get(leftStart+i);
 	}
-	kmerPositionsInLeft[leftKmer].push_back(0);
+	firstKmerPositionInLeft[leftKmer] = 0;
 	std::vector<std::tuple<size_t, size_t, size_t, size_t, size_t, size_t, bool>> result;
 	for (size_t i = k; i < leftEnd-leftStart; i++)
 	{
 		leftKmer <<= 2;
 		leftKmer &= mask;
 		leftKmer += readSequences[left].get(leftStart+i);
-		kmerPositionsInLeft[leftKmer].push_back(i-k+1);
+		if (firstKmerPositionInLeft.count(leftKmer) == 0)
+		{
+			firstKmerPositionInLeft[leftKmer] = i-k+1;
+		}
+		else
+		{
+			extraKmerPositionsInLeft[leftKmer].push_back(i-k+1);
+		}
 	}
 	uint64_t rightKmer = 0;
 	for (size_t i = 0; i < k; i++)
@@ -760,16 +777,16 @@ std::vector<std::tuple<size_t, size_t, size_t, size_t, size_t, size_t, bool>> ge
 	currentMatchesPerDiagonal.resize(diagonalCount, std::make_pair(std::numeric_limits<size_t>::max(), std::numeric_limits<size_t>::max()));
 	size_t minDiagonal = zeroDiagonal - w;
 	size_t maxDiagonal = zeroDiagonal + w;
-	for (auto pos : kmerPositionsInLeft[rightKmer])
+	iterateKmerMatchPositions(rightKmer, firstKmerPositionInLeft, extraKmerPositionsInLeft, [zeroDiagonal, diagonalCount, minDiagonal, maxDiagonal, &currentMatchesPerDiagonal](const size_t pos)
 	{
-		if (pos > zeroDiagonal) continue;
-		if (zeroDiagonal - pos >= diagonalCount) continue;
+		if (pos > zeroDiagonal) return;
+		if (zeroDiagonal - pos >= diagonalCount) return;
 		size_t diagonal = zeroDiagonal - pos;
-		if (diagonal < minDiagonal) continue;
-		if (diagonal > maxDiagonal) continue;
+		if (diagonal < minDiagonal) return;
+		if (diagonal > maxDiagonal) return;
 		currentMatchesPerDiagonal[diagonal].first = 0;
 		currentMatchesPerDiagonal[diagonal].second = 1;
-	}
+	});
 	for (size_t rightpos = k; rightpos < rightEnd-rightStart; rightpos++)
 	{
 		size_t rightKmerPos = rightpos-k+1;
@@ -789,16 +806,16 @@ std::vector<std::tuple<size_t, size_t, size_t, size_t, size_t, size_t, bool>> ge
 		{
 			rightKmer += 3-readSequences[right].get(readSequences[right].size()-1-(rightStart+rightpos));
 		}
-		for (auto pos : kmerPositionsInLeft[rightKmer])
+		iterateKmerMatchPositions(rightKmer, firstKmerPositionInLeft, extraKmerPositionsInLeft, [zeroDiagonal, rightKmerPos, minDiagonal, maxDiagonal, &currentMatchesPerDiagonal, &result, rightFw, left, right, leftStart, rightStart, diagonalCount](const size_t pos)
 		{
-			if (pos > zeroDiagonal + rightKmerPos) continue;
-			if (zeroDiagonal + rightKmerPos - pos >= diagonalCount) continue;
+			if (pos > zeroDiagonal + rightKmerPos) return;
+			if (zeroDiagonal + rightKmerPos - pos >= diagonalCount) return;
 			size_t diagonal = zeroDiagonal + rightKmerPos - pos;
-			if (diagonal < minDiagonal || diagonal > maxDiagonal) continue;
+			if (diagonal < minDiagonal || diagonal > maxDiagonal) return;
 			if (currentMatchesPerDiagonal[diagonal].first != std::numeric_limits<size_t>::max() && currentMatchesPerDiagonal[diagonal].first + currentMatchesPerDiagonal[diagonal].second == rightKmerPos)
 			{
 				currentMatchesPerDiagonal[diagonal].second += 1;
-				continue;
+				return;
 			}
 			if (currentMatchesPerDiagonal[diagonal].first != std::numeric_limits<size_t>::max())
 			{
@@ -811,7 +828,7 @@ std::vector<std::tuple<size_t, size_t, size_t, size_t, size_t, size_t, bool>> ge
 			}
 			currentMatchesPerDiagonal[diagonal].first = rightKmerPos;
 			currentMatchesPerDiagonal[diagonal].second = 1;
-		}
+		});
 	}
 	for (size_t diagonal = 0; diagonal < diagonalCount; diagonal++)
 	{
