@@ -92,40 +92,7 @@ void writeGraph(std::string outputFileName, const std::vector<size_t>& nodeCover
 	std::cerr << countEdges << " graph edges" << std::endl;
 }
 
-phmap::flat_hash_map<std::pair<size_t, size_t>, size_t> getBreakpointToNode(const std::vector<std::vector<std::tuple<size_t, size_t, size_t, bool>>>& breakpoints)
-{
-	size_t nextIndex = 0;
-	phmap::flat_hash_map<std::pair<size_t, size_t>, size_t> result;
-	for (size_t i = 0; i < breakpoints.size(); i++)
-	{
-		for (size_t j = 0; j < breakpoints[i].size(); j++)
-		{
-			if (std::get<1>(breakpoints[i][j]) != i) continue;
-			if (std::get<2>(breakpoints[i][j]) != std::get<0>(breakpoints[i][j])) continue;
-			result[std::make_pair(i, std::get<0>(breakpoints[i][j]))] = nextIndex;
-			nextIndex += 1;
-		}
-	}
-	return result;
-}
-
-std::vector<size_t> getBreakpointCoverage(const phmap::flat_hash_map<std::pair<size_t, size_t>, size_t>& breakpointToNode, const std::vector<std::vector<std::tuple<size_t, size_t, size_t, bool>>>& breakpoints)
-{
-	std::vector<size_t> result;
-	result.resize(breakpointToNode.size(), 0);
-	for (size_t i = 0; i < breakpoints.size(); i++)
-	{
-		for (size_t j = 0; j < breakpoints[i].size(); j++)
-		{
-			size_t index = breakpointToNode.at(std::make_pair(std::get<1>(breakpoints[i][j]), std::get<2>(breakpoints[i][j])));
-			assert(index < result.size());
-			result[index] += 1;
-		}
-	}
-	return result;
-}
-
-std::tuple<size_t, size_t, bool> find(std::vector<std::vector<std::tuple<size_t, size_t, bool>>>& result, const size_t read, const size_t index)
+std::tuple<uint32_t, uint32_t, bool> find(std::vector<std::vector<std::tuple<uint32_t, uint32_t, bool>>>& result, const size_t read, const size_t index)
 {
 	if (std::get<0>(result[read][index]) == read && std::get<1>(result[read][index]) == index)
 	{
@@ -158,7 +125,7 @@ std::tuple<size_t, size_t, bool> find(std::vector<std::vector<std::tuple<size_t,
 	return result[read][index];
 }
 
-void mergeSegments(std::vector<std::vector<std::tuple<size_t, size_t, bool>>>& result, const size_t leftRead, const size_t leftIndex, const size_t rightRead, const size_t rightIndex, const bool fw)
+void mergeSegments(std::vector<std::vector<std::tuple<uint32_t, uint32_t, bool>>>& result, const size_t leftRead, const size_t leftIndex, const size_t rightRead, const size_t rightIndex, const bool fw)
 {
 	auto leftParent = find(result, leftRead, leftIndex);
 	auto rightParent = find(result, rightRead, rightIndex);
@@ -174,7 +141,7 @@ void mergeSegments(std::vector<std::vector<std::tuple<size_t, size_t, bool>>>& r
 	result[std::get<0>(rightParent)][std::get<1>(rightParent)] = std::make_tuple(std::get<0>(leftParent), std::get<1>(leftParent), std::get<2>(leftParent) ^ std::get<2>(rightParent) ^ fw);
 }
 
-void mergeSegments(const std::vector<size_t>& readLengths, std::vector<std::vector<std::tuple<size_t, size_t, bool>>>& result, const std::vector<std::vector<size_t>>& segmentStarts, const std::vector<RankBitvector>& breakpoints, const size_t leftRead, const bool leftFw, const size_t leftStart, const size_t leftEnd, const size_t rightRead, const bool rightFw, const size_t rightStart, const size_t rightEnd)
+void mergeSegments(const std::vector<size_t>& readLengths, std::vector<std::vector<std::tuple<uint32_t, uint32_t, bool>>>& result, const std::vector<std::vector<uint32_t>>& segmentStarts, const std::vector<RankBitvector>& breakpoints, const size_t leftRead, const bool leftFw, const size_t leftStart, const size_t leftEnd, const size_t rightRead, const bool rightFw, const size_t rightStart, const size_t rightEnd)
 {
 	assert(leftFw);
 	assert(breakpoints[leftRead].get(leftStart));
@@ -221,11 +188,11 @@ void mergeSegments(const std::vector<size_t>& readLengths, std::vector<std::vect
 	}
 }
 
-std::tuple<std::vector<std::vector<std::tuple<size_t, size_t, bool>>>, std::vector<std::vector<size_t>>> mergeSegments(const std::vector<size_t>& readLengths, const std::vector<std::tuple<size_t, size_t, size_t, size_t, size_t, size_t, bool>>& matches, const std::vector<RankBitvector>& breakpoints)
+std::tuple<std::vector<std::vector<std::tuple<uint32_t, uint32_t, bool>>>, std::vector<std::vector<uint32_t>>> mergeSegments(const std::vector<size_t>& readLengths, const std::vector<std::tuple<size_t, size_t, size_t, size_t, size_t, size_t, bool>>& matches, const std::vector<RankBitvector>& breakpoints)
 {
 	assert(breakpoints.size() == readLengths.size());
-	std::vector<std::vector<std::tuple<size_t, size_t, bool>>> result;
-	std::vector<std::vector<size_t>> segmentStarts;
+	std::vector<std::vector<std::tuple<uint32_t, uint32_t, bool>>> result;
+	std::vector<std::vector<uint32_t>> segmentStarts;
 	result.resize(breakpoints.size());
 	segmentStarts.resize(breakpoints.size());
 	for (size_t i = 0; i < breakpoints.size(); i++)
@@ -257,10 +224,10 @@ std::tuple<std::vector<std::vector<std::tuple<size_t, size_t, bool>>>, std::vect
 	return std::make_pair(result, segmentStarts);
 }
 
-phmap::flat_hash_map<std::pair<size_t, size_t>, size_t> getSegmentToNode(const std::vector<std::vector<std::tuple<size_t, size_t, bool>>>& segments)
+phmap::flat_hash_map<std::pair<uint32_t, uint32_t>, size_t> getSegmentToNode(const std::vector<std::vector<std::tuple<uint32_t, uint32_t, bool>>>& segments)
 {
 	size_t nextIndex = 0;
-	phmap::flat_hash_map<std::pair<size_t, size_t>, size_t> result;
+	phmap::flat_hash_map<std::pair<uint32_t, uint32_t>, size_t> result;
 	for (size_t i = 0; i < segments.size(); i++)
 	{
 		for (size_t j = 0; j < segments[i].size(); j++)
@@ -275,7 +242,7 @@ phmap::flat_hash_map<std::pair<size_t, size_t>, size_t> getSegmentToNode(const s
 	return result;
 }
 
-phmap::flat_hash_map<std::pair<std::pair<size_t, bool>, std::pair<size_t, bool>>, size_t> getEdgeCoverages(const std::vector<size_t>& readLengths, const phmap::flat_hash_map<std::pair<size_t, size_t>, size_t>& segmentToNode, const std::vector<std::vector<std::tuple<size_t, size_t, bool>>>& segments)
+phmap::flat_hash_map<std::pair<std::pair<size_t, bool>, std::pair<size_t, bool>>, size_t> getEdgeCoverages(const std::vector<size_t>& readLengths, const phmap::flat_hash_map<std::pair<uint32_t, uint32_t>, size_t>& segmentToNode, const std::vector<std::vector<std::tuple<uint32_t, uint32_t, bool>>>& segments)
 {
 	phmap::flat_hash_map<std::pair<std::pair<size_t, bool>, std::pair<size_t, bool>>, size_t> edgeCoverage;
 	for (size_t i = 0; i < segments.size(); i++)
@@ -665,7 +632,7 @@ std::vector<RankBitvector> extendBreakpoints(const std::vector<size_t>& readLeng
 	return breakpoints;
 }
 
-std::vector<size_t> getNodeCoverage(const std::vector<std::vector<std::tuple<size_t, size_t, bool>>>& segments, const phmap::flat_hash_map<std::pair<size_t, size_t>, size_t>& segmentToNode)
+std::vector<size_t> getNodeCoverage(const std::vector<std::vector<std::tuple<uint32_t, uint32_t, bool>>>& segments, const phmap::flat_hash_map<std::pair<uint32_t, uint32_t>, size_t>& segmentToNode)
 {
 	std::vector<size_t> result;
 	result.resize(segmentToNode.size(), 0);
@@ -680,7 +647,7 @@ std::vector<size_t> getNodeCoverage(const std::vector<std::vector<std::tuple<siz
 	return result;
 }
 
-std::vector<size_t> getNodeLengths(const std::vector<std::vector<std::tuple<size_t, size_t, bool>>>& segments, const phmap::flat_hash_map<std::pair<size_t, size_t>, size_t>& segmentToNode, const std::vector<std::vector<size_t>>& segmentStarts)
+std::vector<size_t> getNodeLengths(const std::vector<std::vector<std::tuple<uint32_t, uint32_t, bool>>>& segments, const phmap::flat_hash_map<std::pair<uint32_t, uint32_t>, size_t>& segmentToNode, const std::vector<std::vector<uint32_t>>& segmentStarts)
 {
 	std::vector<size_t> result;
 	result.resize(segmentToNode.size(), std::numeric_limits<size_t>::max());
@@ -704,10 +671,10 @@ std::vector<size_t> getNodeLengths(const std::vector<std::vector<std::tuple<size
 void makeGraph(const std::vector<size_t>& readLengths, const std::vector<std::tuple<size_t, size_t, size_t, size_t, size_t, size_t, bool>>& matches, const size_t minCoverage, const std::string& outputFileName, const size_t k)
 {
 	std::vector<RankBitvector> breakpoints = extendBreakpoints(readLengths, matches);
-	std::vector<std::vector<std::tuple<size_t, size_t, bool>>> segments;
-	std::vector<std::vector<size_t>> segmentStarts;
+	std::vector<std::vector<std::tuple<uint32_t, uint32_t, bool>>> segments;
+	std::vector<std::vector<uint32_t>> segmentStarts;
 	std::tie(segments, segmentStarts) = mergeSegments(readLengths, matches, breakpoints);
-	phmap::flat_hash_map<std::pair<size_t, size_t>, size_t> segmentToNode = getSegmentToNode(segments);
+	phmap::flat_hash_map<std::pair<uint32_t, uint32_t>, size_t> segmentToNode = getSegmentToNode(segments);
 	std::vector<size_t> nodeCoverage = getNodeCoverage(segments, segmentToNode);
 	std::vector<size_t> nodeLength = getNodeLengths(segments, segmentToNode, segmentStarts);
 	phmap::flat_hash_map<std::pair<std::pair<size_t, bool>, std::pair<size_t, bool>>, size_t> edgeCoverages = getEdgeCoverages(readLengths, segmentToNode, segments);
