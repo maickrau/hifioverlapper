@@ -715,7 +715,7 @@ void makeGraph(const std::vector<size_t>& readLengths, const std::vector<std::tu
 }
 
 template <typename F>
-void iterateKmerMatchPositions(const uint64_t kmer, const phmap::flat_hash_map<uint64_t, size_t>& firstPositions, const phmap::flat_hash_map<uint64_t, std::vector<size_t>>& extraPositions, F callback)
+void iterateKmerMatchPositions(const uint64_t kmer, const phmap::flat_hash_map<uint64_t, uint32_t>& firstPositions, const phmap::flat_hash_map<uint64_t, std::vector<uint32_t>>& extraPositions, F callback)
 {
 	auto found = firstPositions.find(kmer);
 	if (found == firstPositions.end()) return;
@@ -729,8 +729,8 @@ std::vector<std::tuple<size_t, size_t, size_t, size_t, size_t, size_t, bool>> ge
 {
 	assert(k <= 31);
 	assert(k % 2 == 1);
-	phmap::flat_hash_map<uint64_t, size_t> firstKmerPositionInLeft;
-	phmap::flat_hash_map<uint64_t, std::vector<size_t>> extraKmerPositionsInLeft;
+	phmap::flat_hash_map<uint64_t, uint32_t> firstKmerPositionInLeft;
+	phmap::flat_hash_map<uint64_t, std::vector<uint32_t>> extraKmerPositionsInLeft;
 	uint64_t mask = (1ull << (2ull*k)) - 1;
 	uint64_t leftKmer = 0;
 	for (size_t i = 0; i < k; i++)
