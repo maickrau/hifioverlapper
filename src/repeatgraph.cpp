@@ -8,6 +8,26 @@
 
 size_t popcount(uint64_t x);
 
+class MatchGroup
+{
+public:
+	class Match
+	{
+	public:
+		uint32_t leftStart;
+		uint32_t rightStart;
+		uint32_t length;
+	};
+	size_t leftRead;
+	size_t rightRead;
+	bool rightFw;
+	size_t leftStart;
+	size_t leftEnd;
+	size_t rightStart;
+	size_t rightEnd;
+	std::vector<Match> matches;
+};
+
 // add if missing
 std::pair<size_t, bool> getBreakpoint(std::vector<std::tuple<size_t, size_t, size_t, bool>>& readBreakpoints, size_t readIndex, size_t wantedPos)
 {
@@ -188,7 +208,7 @@ void mergeSegments(const std::vector<size_t>& readLengths, std::vector<std::vect
 	}
 }
 
-std::tuple<std::vector<std::vector<std::tuple<uint32_t, uint32_t, bool>>>, std::vector<std::vector<uint32_t>>> mergeSegments(const std::vector<size_t>& readLengths, const std::vector<std::tuple<size_t, size_t, size_t, size_t, size_t, size_t, bool>>& matches, const std::vector<RankBitvector>& breakpoints)
+std::tuple<std::vector<std::vector<std::tuple<uint32_t, uint32_t, bool>>>, std::vector<std::vector<uint32_t>>> mergeSegments(const std::vector<size_t>& readLengths, const std::vector<MatchGroup>& matches, const std::vector<RankBitvector>& breakpoints)
 {
 	assert(breakpoints.size() == readLengths.size());
 	std::vector<std::vector<std::tuple<uint32_t, uint32_t, bool>>> result;
@@ -210,9 +230,12 @@ std::tuple<std::vector<std::vector<std::tuple<uint32_t, uint32_t, bool>>>, std::
 		assert(segmentStarts[i].size() == result[i].size()+1);
 		assert(result[i].size() == breakpoints[i].getRank(readLengths[i]));
 	}
-	for (auto match : matches)
+	for (size_t groupi = 0; groupi < matches.size(); groupi++)
 	{
-		mergeSegments(readLengths, result, segmentStarts, breakpoints, std::get<0>(match), true, std::get<1>(match), std::get<2>(match), std::get<3>(match), std::get<6>(match), std::get<4>(match), std::get<5>(match));
+		for (size_t posi = 0; posi < matches[groupi].matches.size(); posi++)
+		{
+			mergeSegments(readLengths, result, segmentStarts, breakpoints, matches[groupi].leftRead, true, matches[groupi].matches[posi].leftStart, matches[groupi].matches[posi].leftStart+matches[groupi].matches[posi].length, matches[groupi].rightRead, matches[groupi].rightFw, matches[groupi].matches[posi].rightStart, matches[groupi].matches[posi].rightStart+matches[groupi].matches[posi].length);
+		}
 	}
 	for (size_t i = 0; i < result.size(); i++)
 	{
@@ -342,33 +365,52 @@ std::pair<bool, bool> extendBreakpointsFwBw(const std::vector<size_t>& readLengt
 	return std::make_pair(addedAnyLeft, addedAnyRight);
 }
 
-std::pair<size_t, size_t> getMatchSpan(const std::vector<size_t>& readLengths, const std::tuple<size_t, size_t, size_t, size_t, size_t, size_t, bool> match, size_t readI)
+std::pair<size_t, size_t> getMatchSpan(const std::vector<size_t>& readLengths, const MatchGroup& group, const MatchGroup::Match& pos, size_t readI)
 {
-	if (std::get<0>(match) == readI)
+	if (group.leftRead == readI)
 	{
-		assert(std::get<3>(match) != readI);
-		return std::make_pair(std::get<1>(match), std::get<2>(match));
+		assert(group.rightRead != readI);
+		return std::make_pair(pos.leftStart, pos.leftStart+pos.length);
 	}
 	else
 	{
-		assert(std::get<3>(match) == readI);
-		if (std::get<6>(match))
+		assert(group.rightRead == readI);
+		if (group.rightFw)
 		{
-			return std::make_pair(std::get<4>(match), std::get<5>(match));
+			return std::make_pair(pos.rightStart, pos.rightStart+pos.length);
 		}
 		else
 		{
-			return std::make_pair(readLengths[readI] - std::get<5>(match), readLengths[readI] - std::get<4>(match));
+			return std::make_pair(readLengths[readI] - (pos.rightStart+pos.length), readLengths[readI] - pos.rightStart);
 		}
 	}
 }
 
-void buildIntervalTree(const std::vector<size_t>& readLengths, const std::vector<std::tuple<size_t, size_t, size_t, size_t, size_t, size_t, bool>>& matches, std::vector<size_t>& relevantMatches, std::vector<size_t>& relevantMatchTreeMaxRight, std::vector<size_t>& relevantMatchTreeMinLeft, const size_t readi)
+std::pair<size_t, size_t> getLinearTo2dIndices(const size_t linearKey, const RankBitvector& kmermatchToGroup, const std::vector<size_t>& numKmerMatchesBeforeGroupStart)
+{
+	size_t groupi = kmermatchToGroup.getRank(linearKey);
+	if (kmermatchToGroup.get(linearKey)) groupi += 1;
+	assert(groupi >= 1);
+	groupi -= 1;
+	assert(linearKey >= numKmerMatchesBeforeGroupStart[groupi]);
+	assert(groupi == numKmerMatchesBeforeGroupStart.size()-1 || numKmerMatchesBeforeGroupStart[groupi+1] > linearKey);
+	size_t posi = linearKey - numKmerMatchesBeforeGroupStart[groupi];
+	return std::make_pair(groupi, posi);
+}
+
+void buildIntervalTree(const std::vector<size_t>& readLengths, const RankBitvector& kmermatchToGroup, const std::vector<size_t>& numKmerMatchesBeforeGroupStart, const std::vector<MatchGroup>& matches, std::vector<size_t>& relevantMatches, std::vector<size_t>& relevantMatchTreeMaxRight, std::vector<size_t>& relevantMatchTreeMinLeft, const size_t readi)
 {
 	const uint64_t firstBit = 1ull << 63ull;
 	const uint64_t mask = firstBit-1;
 	std::vector<size_t> sortedMatches = relevantMatches;
-	std::sort(sortedMatches.begin(), sortedMatches.end(), [&matches, &readLengths, mask, firstBit, readi](size_t left, size_t right) { return getMatchSpan(readLengths, matches[left & mask], readi).first < getMatchSpan(readLengths, matches[right & mask], readi).first; });
+	std::sort(sortedMatches.begin(), sortedMatches.end(), [&matches, &readLengths, mask, firstBit, readi, &kmermatchToGroup, &numKmerMatchesBeforeGroupStart](size_t left, size_t right)
+	{
+		size_t leftGroup, leftPos;
+		size_t rightGroup, rightPos;
+		std::tie(leftGroup, leftPos) = getLinearTo2dIndices(left & mask, kmermatchToGroup, numKmerMatchesBeforeGroupStart);
+		std::tie(rightGroup, rightPos) = getLinearTo2dIndices(right & mask, kmermatchToGroup, numKmerMatchesBeforeGroupStart);
+		return getMatchSpan(readLengths, matches[leftGroup], matches[leftGroup].matches[leftPos], readi).first < getMatchSpan(readLengths, matches[rightGroup], matches[rightGroup].matches[rightPos], readi).first;
+	});
 	size_t test = sortedMatches.size();
 	relevantMatches.assign(relevantMatches.size(), std::numeric_limits<size_t>::max());
 	size_t treeMaxDepth = 0;
@@ -408,25 +450,31 @@ void buildIntervalTree(const std::vector<size_t>& readLengths, const std::vector
 	relevantMatchTreeMinLeft.resize(sortedMatches.size(), 0);
 	for (size_t i = sortedMatches.size()-1; i < sortedMatches.size(); i--)
 	{
-		relevantMatchTreeMaxRight[i] = getMatchSpan(readLengths, matches[relevantMatches[i] & mask], readi).second;
-		relevantMatchTreeMinLeft[i] = getMatchSpan(readLengths, matches[relevantMatches[i] & mask], readi).first;
+		size_t thisgroup, thispos;
+		std::tie(thisgroup, thispos) = getLinearTo2dIndices(relevantMatches[i] & mask, kmermatchToGroup, numKmerMatchesBeforeGroupStart);
+		relevantMatchTreeMaxRight[i] = getMatchSpan(readLengths, matches[thisgroup], matches[thisgroup].matches[thispos], readi).second;
+		relevantMatchTreeMinLeft[i] = getMatchSpan(readLengths, matches[thisgroup], matches[thisgroup].matches[thispos], readi).first;
 		if (i * 2 + 1 < sortedMatches.size())
 		{
+			size_t childgroup, childpos;
+			std::tie(childgroup, childpos) = getLinearTo2dIndices(relevantMatches[i*2+1] & mask, kmermatchToGroup, numKmerMatchesBeforeGroupStart);
 			relevantMatchTreeMaxRight[i] = std::max(relevantMatchTreeMaxRight[i], relevantMatchTreeMaxRight[i*2+1]);
 			relevantMatchTreeMinLeft[i] = std::min(relevantMatchTreeMinLeft[i], relevantMatchTreeMinLeft[i*2+1]);
-			assert(getMatchSpan(readLengths, matches[relevantMatches[i*2+1] & mask], readi).first <= getMatchSpan(readLengths, matches[relevantMatches[i] & mask], readi).first);
+			assert(getMatchSpan(readLengths, matches[childgroup], matches[childgroup].matches[childpos], readi).first <= getMatchSpan(readLengths, matches[childgroup], matches[childgroup].matches[childpos], readi).first);
 		}
 		if (i * 2 + 2 < sortedMatches.size())
 		{
+			size_t childgroup, childpos;
+			std::tie(childgroup, childpos) = getLinearTo2dIndices(relevantMatches[i*2+2] & mask, kmermatchToGroup, numKmerMatchesBeforeGroupStart);
 			relevantMatchTreeMaxRight[i] = std::max(relevantMatchTreeMaxRight[i], relevantMatchTreeMaxRight[i*2+2]);
 			relevantMatchTreeMinLeft[i] = std::min(relevantMatchTreeMinLeft[i], relevantMatchTreeMinLeft[i*2+2]);
-			assert(getMatchSpan(readLengths, matches[relevantMatches[i] & mask], readi).first <= getMatchSpan(readLengths, matches[relevantMatches[i*2+2] & mask], readi).first);
+			assert(getMatchSpan(readLengths, matches[childgroup], matches[childgroup].matches[childpos], readi).first <= getMatchSpan(readLengths, matches[childgroup], matches[childgroup].matches[childpos], readi).first);
 		}
 	}
 }
 
 template <typename F>
-void iterateIntervalTreeAlnMatches(const std::vector<size_t>& readLengths, const std::vector<std::tuple<size_t, size_t, size_t, size_t, size_t, size_t, bool>>& matches, const std::vector<size_t>& relevantMatches, const std::vector<std::pair<size_t, size_t>>& matchLeftSpan, const std::vector<std::pair<size_t, size_t>>& matchRightSpan, const std::vector<size_t>& relevantMatchTreeMaxRight, const std::vector<size_t>& relevantMatchTreeMinLeft, const size_t readi, const size_t intervalStart, const size_t intervalEnd, F callback)
+void iterateIntervalTreeAlnMatches(const std::vector<size_t>& readLengths, const std::vector<size_t>& relevantMatches, const std::vector<std::pair<size_t, size_t>>& matchLeftSpan, const std::vector<std::pair<size_t, size_t>>& matchRightSpan, const std::vector<size_t>& relevantMatchTreeMaxRight, const std::vector<size_t>& relevantMatchTreeMinLeft, const size_t readi, const size_t intervalStart, const size_t intervalEnd, F callback)
 {
 	const uint64_t firstBit = 1ull << 63ull;
 	const uint64_t mask = firstBit-1;
@@ -439,7 +487,16 @@ void iterateIntervalTreeAlnMatches(const std::vector<size_t>& readLengths, const
 	{
 		size_t aln = relevantMatches[pos];
 		size_t rawAln = aln & mask;
-		auto interval = getMatchSpan(readLengths, matches[rawAln], readi);
+		bool isRight = (aln & firstBit) == firstBit;
+		std::pair<size_t, size_t> interval;
+		if (isRight)
+		{
+			interval = matchRightSpan[rawAln];
+		}
+		else
+		{
+			interval = matchLeftSpan[rawAln];
+		}
 		if (interval.first <= intervalEnd && interval.second >= intervalStart) callback(aln);
 		if (relevantMatchTreeMinLeft[pos] > intervalEnd)
 		{
@@ -487,7 +544,7 @@ void iterateIntervalTreeAlnMatches(const std::vector<size_t>& readLengths, const
 	}
 }
 
-std::vector<RankBitvector> extendBreakpoints(const std::vector<size_t>& readLengths, const std::vector<std::tuple<size_t, size_t, size_t, size_t, size_t, size_t, bool>>& matches)
+std::vector<RankBitvector> extendBreakpoints(const std::vector<size_t>& readLengths, const std::vector<MatchGroup>& matches)
 {
 	std::vector<RankBitvector> breakpoints;
 	const uint64_t firstBit = 1ull << 63ull;
@@ -502,9 +559,22 @@ std::vector<RankBitvector> extendBreakpoints(const std::vector<size_t>& readLeng
 	std::vector<std::vector<uint64_t>> relevantMatches;
 	relevantMatches.resize(readLengths.size());
 	size_t firstFwBwMatch = matches.size();
-	for (size_t i = 0; i < matches.size(); i++)
+	RankBitvector kmermatchToGroup;
+	std::vector<size_t> numKmerMatchesBeforeGroupStart;
+	numKmerMatchesBeforeGroupStart.resize(matches.size(), 0);
+	size_t totalMatchCount = 0;
+	for (size_t groupi = 0; groupi < matches.size(); groupi++)
 	{
-		if (std::get<6>(matches[i]))
+		totalMatchCount += matches[groupi].matches.size();
+	}
+	kmermatchToGroup.resize(totalMatchCount);
+	assert(matches.size() <= (size_t)std::numeric_limits<uint32_t>::max()/2);
+	size_t kmerNumber = 0;
+	for (size_t groupi = 0; groupi < matches.size(); groupi++)
+	{
+		numKmerMatchesBeforeGroupStart[groupi] = kmerNumber;
+		kmermatchToGroup.set(kmerNumber, true);
+		if (matches[groupi].rightFw)
 		{
 			assert(firstFwBwMatch == matches.size());
 		}
@@ -512,88 +582,115 @@ std::vector<RankBitvector> extendBreakpoints(const std::vector<size_t>& readLeng
 		{
 			if (firstFwBwMatch == matches.size())
 			{
-				firstFwBwMatch = i;
+				firstFwBwMatch = groupi;
 			}
-			assert(i >= firstFwBwMatch);
+			assert(groupi >= firstFwBwMatch);
 		}
-		relevantMatches[std::get<0>(matches[i])].emplace_back(i);
-		relevantMatches[std::get<3>(matches[i])].emplace_back(i + firstBit);
-		breakpoints[std::get<0>(matches[i])].set(std::get<1>(matches[i]), true);
-		breakpoints[std::get<0>(matches[i])].set(std::get<2>(matches[i]), true);
-		if (std::get<6>(matches[i]))
+		for (size_t posi = 0; posi < matches[groupi].matches.size(); posi++)
 		{
-			breakpoints[std::get<3>(matches[i])].set(std::get<4>(matches[i]), true);
-			breakpoints[std::get<3>(matches[i])].set(std::get<5>(matches[i]), true);
+			assert(matches[groupi].matches.size() <= (size_t)std::numeric_limits<uint32_t>::max());
+			size_t key = kmerNumber + posi;
+			relevantMatches[matches[groupi].leftRead].emplace_back(key);
+			relevantMatches[matches[groupi].rightRead].emplace_back(key + firstBit);
+			breakpoints[matches[groupi].leftRead].set(matches[groupi].matches[posi].leftStart, true);
+			breakpoints[matches[groupi].leftRead].set(matches[groupi].matches[posi].leftStart + matches[groupi].matches[posi].length, true);
+			if (matches[groupi].rightFw)
+			{
+				breakpoints[matches[groupi].rightRead].set(matches[groupi].matches[posi].rightStart, true);
+				breakpoints[matches[groupi].rightRead].set(matches[groupi].matches[posi].rightStart + matches[groupi].matches[posi].length, true);
+			}
+			else
+			{
+				breakpoints[matches[groupi].rightRead].set(readLengths[matches[groupi].rightRead] - matches[groupi].matches[posi].rightStart, true);
+				breakpoints[matches[groupi].rightRead].set(readLengths[matches[groupi].rightRead] - (matches[groupi].matches[posi].rightStart + matches[groupi].matches[posi].length), true);
+			}
 		}
-		else
-		{
-			breakpoints[std::get<3>(matches[i])].set(readLengths[std::get<3>(matches[i])], true);
-			breakpoints[std::get<3>(matches[i])].set(readLengths[std::get<3>(matches[i])], true);
-		}
+		kmerNumber += matches[groupi].matches.size();
 	}
+	kmermatchToGroup.buildRanks();
 	std::vector<std::vector<size_t>> relevantMatchTreeMaxRight;
 	std::vector<std::vector<size_t>> relevantMatchTreeMinLeft;
 	relevantMatchTreeMaxRight.resize(relevantMatches.size());
 	relevantMatchTreeMinLeft.resize(relevantMatches.size());
 	for (size_t i = 0; i < relevantMatches.size(); i++)
 	{
-		buildIntervalTree(readLengths, matches, relevantMatches[i], relevantMatchTreeMaxRight[i], relevantMatchTreeMinLeft[i], i);
+		buildIntervalTree(readLengths, kmermatchToGroup, numKmerMatchesBeforeGroupStart, matches, relevantMatches[i], relevantMatchTreeMaxRight[i], relevantMatchTreeMinLeft[i], i);
 	}
 	std::vector<std::pair<size_t, size_t>> matchLeftSpan;
 	std::vector<std::pair<size_t, size_t>> matchRightSpan;
-	matchLeftSpan.resize(matches.size());
-	matchRightSpan.resize(matches.size());
-	for (size_t i = 0; i < matches.size(); i++)
+	matchLeftSpan.resize(kmerNumber);
+	matchRightSpan.resize(kmerNumber);
+	kmerNumber = 0;
+	for (size_t groupi = 0; groupi < matches.size(); groupi++)
 	{
-		matchLeftSpan[i] = getMatchSpan(readLengths, matches[i], std::get<0>(matches[i]));
-		matchRightSpan[i] = getMatchSpan(readLengths, matches[i], std::get<3>(matches[i]));
+		for (size_t posi = 0; posi < matches[groupi].matches.size(); posi++)
+		{
+			matchLeftSpan[kmerNumber] = getMatchSpan(readLengths, matches[groupi], matches[groupi].matches[posi], matches[groupi].leftRead);
+			matchRightSpan[kmerNumber] = getMatchSpan(readLengths, matches[groupi], matches[groupi].matches[posi], matches[groupi].rightRead);
+			kmerNumber += 1;
+		}
 	}
+	assert(kmerNumber == matchLeftSpan.size());
 	std::vector<bool> inQueue;
-	inQueue.resize(matches.size(), true);
+	inQueue.resize(kmerNumber, true);
 	std::vector<size_t> fwfwCheckQueue;
 	std::vector<size_t> fwbwCheckQueue;
-	for (size_t i = 0; i < firstFwBwMatch; i++)
+	kmerNumber = 0;
+	for (size_t groupi = 0; groupi < firstFwBwMatch; groupi++)
 	{
-		fwfwCheckQueue.emplace_back(i);
+		for (size_t posi = 0; posi < matches[groupi].matches.size(); posi++)
+		{
+			fwfwCheckQueue.emplace_back(kmerNumber);
+			kmerNumber += 1;
+		}
 	}
-	for (size_t i = firstFwBwMatch; i < matches.size(); i++)
+	for (size_t groupi = firstFwBwMatch; groupi < matches.size(); groupi++)
 	{
-		fwbwCheckQueue.emplace_back(i);
+		for (size_t posi = 0; posi < matches[groupi].matches.size(); posi++)
+		{
+			fwbwCheckQueue.emplace_back(kmerNumber);
+			kmerNumber += 1;
+		}
 	}
+	assert(kmerNumber == matchLeftSpan.size());
 	while (fwfwCheckQueue.size() >= 1 || fwbwCheckQueue.size() >= 1)
 	{
-		size_t matchi;
+		size_t matchkey;
+		size_t groupi, posi;
 		std::pair<bool, bool> addedAny;
 		if (fwfwCheckQueue.size() >= 1)
 		{
-			matchi = fwfwCheckQueue.back();
-			assert(std::get<6>(matches[matchi]));
-			inQueue[matchi] = false;
+			matchkey = fwfwCheckQueue.back();
+			std::tie(groupi, posi) = getLinearTo2dIndices(matchkey, kmermatchToGroup, numKmerMatchesBeforeGroupStart);
+			assert(matches[groupi].rightFw);
+			inQueue[matchkey] = false;
 			fwfwCheckQueue.pop_back();
-			addedAny = extendBreakpointsFwFw(readLengths, breakpoints, std::get<0>(matches[matchi]), std::get<1>(matches[matchi]), std::get<2>(matches[matchi]), std::get<3>(matches[matchi]), std::get<4>(matches[matchi]), std::get<5>(matches[matchi]));
+			addedAny = extendBreakpointsFwFw(readLengths, breakpoints, matches[groupi].leftRead, matches[groupi].matches[posi].leftStart, matches[groupi].matches[posi].leftStart+matches[groupi].matches[posi].length, matches[groupi].rightRead, matches[groupi].matches[posi].rightStart, matches[groupi].matches[posi].rightStart+matches[groupi].matches[posi].length);
 		}
 		else
 		{
 			assert(fwbwCheckQueue.size() >= 1);
-			matchi = fwbwCheckQueue.back();
-			assert(!std::get<6>(matches[matchi]));
-			inQueue[matchi] = false;
+			matchkey = fwbwCheckQueue.back();
+			std::tie(groupi, posi) = getLinearTo2dIndices(matchkey, kmermatchToGroup, numKmerMatchesBeforeGroupStart);
+			assert(!matches[groupi].rightFw);
+			inQueue[matchkey] = false;
 			fwbwCheckQueue.pop_back();
-			addedAny = extendBreakpointsFwBw(readLengths, breakpoints, std::get<0>(matches[matchi]), std::get<1>(matches[matchi]), std::get<2>(matches[matchi]), std::get<3>(matches[matchi]), std::get<4>(matches[matchi]), std::get<5>(matches[matchi]));
+			addedAny = extendBreakpointsFwBw(readLengths, breakpoints, matches[groupi].leftRead, matches[groupi].matches[posi].leftStart, matches[groupi].matches[posi].leftStart+matches[groupi].matches[posi].length, matches[groupi].rightRead, matches[groupi].matches[posi].rightStart, matches[groupi].matches[posi].rightStart+matches[groupi].matches[posi].length);
 		}
 		if (addedAny.first)
 		{
-			iterateIntervalTreeAlnMatches(readLengths, matches, relevantMatches[std::get<0>(matches[matchi])], matchLeftSpan, matchRightSpan, relevantMatchTreeMaxRight[std::get<0>(matches[matchi])], relevantMatchTreeMinLeft[std::get<0>(matches[matchi])], std::get<0>(matches[matchi]), matchLeftSpan[matchi].first, matchLeftSpan[matchi].second, [firstBit, mask, firstFwBwMatch, &fwfwCheckQueue, &fwbwCheckQueue, &inQueue, &matchLeftSpan, &matchRightSpan, matchi](size_t aln)
+			iterateIntervalTreeAlnMatches(readLengths, relevantMatches[matches[groupi].leftRead], matchLeftSpan, matchRightSpan, relevantMatchTreeMaxRight[matches[groupi].leftRead], relevantMatchTreeMinLeft[matches[groupi].leftRead], matches[groupi].leftRead, matchLeftSpan[matchkey].first, matchLeftSpan[matchkey].second, [firstBit, mask, firstFwBwMatch, &fwfwCheckQueue, &fwbwCheckQueue, &inQueue, &matchLeftSpan, &matchRightSpan, matchkey, &kmermatchToGroup, &numKmerMatchesBeforeGroupStart](size_t aln)
 			{
 				size_t rawAln = aln & mask;
 				if (inQueue[rawAln]) return;
-				if (rawAln == matchi) return;
+				if (rawAln == matchkey) return;
 				bool isRight = (aln & firstBit) != 0;
-				assert(!isRight || matchRightSpan[rawAln].first <= matchLeftSpan[matchi].second);
-				assert(!isRight || matchRightSpan[rawAln].second >= matchLeftSpan[matchi].first);
-				assert(isRight || matchLeftSpan[rawAln].first <= matchLeftSpan[matchi].second);
-				assert(isRight || matchLeftSpan[rawAln].second >= matchLeftSpan[matchi].first);
-				if (rawAln < firstFwBwMatch)
+				assert(!isRight || matchRightSpan[rawAln].first <= matchLeftSpan[matchkey].second);
+				assert(!isRight || matchRightSpan[rawAln].second >= matchLeftSpan[matchkey].first);
+				assert(isRight || matchLeftSpan[rawAln].first <= matchLeftSpan[matchkey].second);
+				assert(isRight || matchLeftSpan[rawAln].second >= matchLeftSpan[matchkey].first);
+				auto pos = getLinearTo2dIndices(rawAln, kmermatchToGroup, numKmerMatchesBeforeGroupStart);
+				if (pos.first < firstFwBwMatch)
 				{
 					fwfwCheckQueue.push_back(rawAln);
 				}
@@ -606,17 +703,18 @@ std::vector<RankBitvector> extendBreakpoints(const std::vector<size_t>& readLeng
 		}
 		if (addedAny.second)
 		{
-			iterateIntervalTreeAlnMatches(readLengths, matches, relevantMatches[std::get<3>(matches[matchi])], matchLeftSpan, matchRightSpan, relevantMatchTreeMaxRight[std::get<3>(matches[matchi])], relevantMatchTreeMinLeft[std::get<3>(matches[matchi])], std::get<3>(matches[matchi]), matchRightSpan[matchi].first, matchRightSpan[matchi].second, [firstBit, mask, firstFwBwMatch, &fwfwCheckQueue, &fwbwCheckQueue, &inQueue, &matchLeftSpan, &matchRightSpan, matchi](size_t aln)
+			iterateIntervalTreeAlnMatches(readLengths, relevantMatches[matches[groupi].rightRead], matchLeftSpan, matchRightSpan, relevantMatchTreeMaxRight[matches[groupi].rightRead], relevantMatchTreeMinLeft[matches[groupi].rightRead], matches[groupi].rightRead, matchRightSpan[matchkey].first, matchRightSpan[matchkey].second, [firstBit, mask, firstFwBwMatch, &fwfwCheckQueue, &fwbwCheckQueue, &inQueue, &matchLeftSpan, &matchRightSpan, matchkey, &kmermatchToGroup, &numKmerMatchesBeforeGroupStart](size_t aln)
 			{
 				size_t rawAln = aln & mask;
 				if (inQueue[rawAln]) return;
-				if (rawAln == matchi) return;
+				if (rawAln == matchkey) return;
 				bool isRight = (aln & firstBit) != 0;
-				assert(!isRight || matchRightSpan[rawAln].first <= matchRightSpan[matchi].second);
-				assert(!isRight || matchRightSpan[rawAln].second >= matchRightSpan[matchi].first);
-				assert(isRight || matchLeftSpan[rawAln].first <= matchRightSpan[matchi].second);
-				assert(isRight || matchLeftSpan[rawAln].second >= matchRightSpan[matchi].first);
-				if (rawAln < firstFwBwMatch)
+				assert(!isRight || matchRightSpan[rawAln].first <= matchRightSpan[matchkey].second);
+				assert(!isRight || matchRightSpan[rawAln].second >= matchRightSpan[matchkey].first);
+				assert(isRight || matchLeftSpan[rawAln].first <= matchRightSpan[matchkey].second);
+				assert(isRight || matchLeftSpan[rawAln].second >= matchRightSpan[matchkey].first);
+				auto pos = getLinearTo2dIndices(rawAln, kmermatchToGroup, numKmerMatchesBeforeGroupStart);
+				if (pos.first < firstFwBwMatch)
 				{
 					fwfwCheckQueue.push_back(rawAln);
 				}
@@ -668,7 +766,7 @@ std::vector<size_t> getNodeLengths(const std::vector<std::vector<std::tuple<uint
 	return result;
 }
 
-void makeGraph(const std::vector<size_t>& readLengths, const std::vector<std::tuple<size_t, size_t, size_t, size_t, size_t, size_t, bool>>& matches, const size_t minCoverage, const std::string& outputFileName, const size_t k)
+void makeGraph(const std::vector<size_t>& readLengths, const std::vector<MatchGroup>& matches, const size_t minCoverage, const std::string& outputFileName, const size_t k)
 {
 	std::vector<RankBitvector> breakpoints = extendBreakpoints(readLengths, matches);
 	std::vector<std::vector<std::tuple<uint32_t, uint32_t, bool>>> segments;
@@ -759,10 +857,17 @@ void iterateSyncmers(const std::vector<TwobitString>& readSequences, const size_
 	}
 }
 
-std::vector<std::tuple<size_t, size_t, size_t, size_t, size_t, size_t, bool>> getKmerMatches(const std::vector<TwobitString>& readSequences, const size_t left, const size_t leftStart, const size_t leftEnd, const size_t right, const size_t rightStart, const size_t rightEnd, const bool rightFw, const size_t k, const size_t w)
+void getKmerMatches(const std::vector<TwobitString>& readSequences, MatchGroup& mappingMatch, const size_t k, const size_t w)
 {
 	assert(k <= 31);
 	assert(k % 2 == 1);
+	size_t leftStart = mappingMatch.leftStart;
+	size_t leftEnd = mappingMatch.leftEnd;
+	size_t rightStart = mappingMatch.rightStart;
+	size_t rightEnd = mappingMatch.rightEnd;
+	bool rightFw = mappingMatch.rightFw;
+	size_t left = mappingMatch.leftRead;
+	size_t right = mappingMatch.rightRead;
 	phmap::flat_hash_map<uint64_t, uint32_t> firstKmerPositionInLeft;
 	phmap::flat_hash_map<uint64_t, std::vector<uint32_t>> extraKmerPositionsInLeft;
 	iterateSyncmers(readSequences, k, 20, left, leftStart, leftEnd, true, [&firstKmerPositionInLeft, &extraKmerPositionsInLeft](const size_t kmer, const size_t pos)
@@ -786,8 +891,7 @@ std::vector<std::tuple<size_t, size_t, size_t, size_t, size_t, size_t, bool>> ge
 	}
 	if (rightEnd-rightStart > leftEnd-leftStart) diagonalCount += (rightEnd-rightStart)-(leftEnd-leftStart);
 	currentMatchesPerDiagonal.resize(diagonalCount, std::make_pair(std::numeric_limits<size_t>::max(), std::numeric_limits<size_t>::max()));
-	std::vector<std::tuple<size_t, size_t, size_t, size_t, size_t, size_t, bool>> result;
-	iterateSyncmers(readSequences, k, 20, right, rightStart, rightEnd, rightFw, [&firstKmerPositionInLeft, &extraKmerPositionsInLeft, &currentMatchesPerDiagonal, diagonalCount, zeroDiagonal, rightFw, left, right, leftStart, rightStart, leftEnd, rightEnd, w, k, &result](const size_t kmer, const size_t rightPos)
+	iterateSyncmers(readSequences, k, 20, right, rightStart, rightEnd, rightFw, [&firstKmerPositionInLeft, &extraKmerPositionsInLeft, &currentMatchesPerDiagonal, diagonalCount, zeroDiagonal, rightFw, left, right, leftStart, rightStart, leftEnd, rightEnd, w, k, &mappingMatch](const size_t kmer, const size_t rightPos)
 	{
 		size_t interpolatedLeftPos = (double)(rightPos) / (double)(rightEnd-rightStart) * (double)(leftEnd-leftStart);
 		assert(rightPos + zeroDiagonal >= interpolatedLeftPos + w);
@@ -795,7 +899,7 @@ std::vector<std::tuple<size_t, size_t, size_t, size_t, size_t, size_t, bool>> ge
 		size_t minDiagonal = rightPos + zeroDiagonal - interpolatedLeftPos - w;
 		size_t maxDiagonal = rightPos + zeroDiagonal - interpolatedLeftPos + w;
 		assert(maxDiagonal <= diagonalCount);
-		iterateKmerMatchPositions(kmer, firstKmerPositionInLeft, extraKmerPositionsInLeft, [zeroDiagonal, rightPos, minDiagonal, maxDiagonal, &currentMatchesPerDiagonal, &result, rightFw, left, right, leftStart, rightStart, diagonalCount, k](const size_t leftPos)
+		iterateKmerMatchPositions(kmer, firstKmerPositionInLeft, extraKmerPositionsInLeft, [zeroDiagonal, rightPos, minDiagonal, maxDiagonal, &currentMatchesPerDiagonal, &mappingMatch, rightFw, left, right, leftStart, rightStart, diagonalCount, k](const size_t leftPos)
 		{
 			if (leftPos > zeroDiagonal + rightPos) return;
 			if (zeroDiagonal + rightPos - leftPos >= diagonalCount) return;
@@ -814,7 +918,10 @@ std::vector<std::tuple<size_t, size_t, size_t, size_t, size_t, size_t, bool>> ge
 				size_t leftMatchStart = leftStart + currentMatchesPerDiagonal[diagonal].first + zeroDiagonal - diagonal;
 				size_t rightMatchStart = rightStart + currentMatchesPerDiagonal[diagonal].first;
 				size_t length = currentMatchesPerDiagonal[diagonal].second - currentMatchesPerDiagonal[diagonal].first;
-				result.emplace_back(left, leftMatchStart, leftMatchStart + length, right, rightMatchStart, rightMatchStart + length, rightFw);
+				mappingMatch.matches.emplace_back();
+				mappingMatch.matches.back().leftStart = leftMatchStart;
+				mappingMatch.matches.back().rightStart = rightMatchStart;
+				mappingMatch.matches.back().length = length;
 			}
 			currentMatchesPerDiagonal[diagonal].first = rightPos;
 			currentMatchesPerDiagonal[diagonal].second = rightPos+1;
@@ -829,9 +936,11 @@ std::vector<std::tuple<size_t, size_t, size_t, size_t, size_t, size_t, bool>> ge
 		size_t leftMatchStart = leftStart + currentMatchesPerDiagonal[diagonal].first + zeroDiagonal - diagonal;
 		size_t rightMatchStart = rightStart + currentMatchesPerDiagonal[diagonal].first;
 		size_t length = currentMatchesPerDiagonal[diagonal].second - currentMatchesPerDiagonal[diagonal].first;
-		result.emplace_back(left, leftMatchStart, leftMatchStart + length, right, rightMatchStart, rightMatchStart + length, rightFw);
+		mappingMatch.matches.emplace_back();
+		mappingMatch.matches.back().leftStart = leftMatchStart;
+		mappingMatch.matches.back().rightStart = rightMatchStart;
+		mappingMatch.matches.back().length = length;
 	}
-	return result;
 }
 
 int main(int argc, char** argv)
@@ -872,36 +981,41 @@ int main(int argc, char** argv)
 	}
 	const std::vector<std::string>& readNames = storage.getNames();
 	std::mutex printMutex;
-	std::vector<std::tuple<size_t, size_t, size_t, size_t, size_t, size_t, bool>> mappingmatches;
-	auto result = matchIndex.iterateMatchChains(numThreads, storage.getRawReadLengths(), [&printMutex, &mappingmatches, minAlignmentLength](const size_t left, const size_t leftstart, const size_t leftend, const bool leftFw, const size_t right, const size_t rightstart, const size_t rightend, const bool rightFw)
+	std::vector<MatchGroup> matches;
+	auto result = matchIndex.iterateMatchChains(numThreads, storage.getRawReadLengths(), [&printMutex, &matches, minAlignmentLength](const size_t left, const size_t leftstart, const size_t leftend, const bool leftFw, const size_t right, const size_t rightstart, const size_t rightend, const bool rightFw)
 	{
 		if (leftend+1-leftstart < minAlignmentLength) return;
 		if (rightend+1-rightstart < minAlignmentLength) return;
 		std::lock_guard<std::mutex> lock { printMutex };
 		assert(leftFw);
-		mappingmatches.emplace_back(left, leftstart, leftend+1, right, rightstart, rightend+1, rightFw); // param coordinates are inclusive, switch to exclusive
+		matches.emplace_back();
+		matches.back().leftRead = left;
+		matches.back().rightRead = right;
+		matches.back().rightFw = rightFw;
+		matches.back().leftStart = leftstart;
+		matches.back().leftEnd = leftend+1;
+		matches.back().rightStart = rightstart;
+		matches.back().rightEnd = rightend+1;
 	});
 	// fw-fw matches first, fw-bw matches later
-	std::stable_sort(mappingmatches.begin(), mappingmatches.end(), [](auto left, auto right){ return std::get<6>(left) && !std::get<6>(right); });
-	std::vector<std::tuple<size_t, size_t, size_t, size_t, size_t, size_t, bool>> kmermatches;
-	std::cerr << mappingmatches.size() << " mapping matches" << std::endl;
-	for (auto t : mappingmatches)
+	std::stable_sort(matches.begin(), matches.end(), [](const auto& left, const auto& right){ return left.rightFw && !right.rightFw; });
+	std::cerr << matches.size() << " mapping matches" << std::endl;
+	size_t kmerMatchCount = 0;
+	for (auto& t : matches)
 	{
-		auto matches = getKmerMatches(readSequences, std::get<0>(t), std::get<1>(t), std::get<2>(t), std::get<3>(t), std::get<4>(t), std::get<5>(t), std::get<6>(t), graphk, 50);
-		for (auto match : matches)
+		getKmerMatches(readSequences, t, graphk, 50);
+		kmerMatchCount += t.matches.size();
+		for (auto pos : t.matches)
 		{
-			assert(std::get<2>(match) > std::get<1>(match));
-			assert(std::get<1>(match) >= std::get<1>(t));
-			assert(std::get<2>(match) <= std::get<2>(t));
-			assert(std::get<5>(match) > std::get<4>(match));
-			assert(std::get<4>(match) >= std::get<4>(t));
-			assert(std::get<5>(match) <= std::get<5>(t));
+			assert(pos.leftStart >= t.leftStart);
+			assert(pos.rightStart >= t.rightStart);
+			assert(pos.leftStart + pos.length <= t.leftEnd);
+			assert(pos.rightStart + pos.length <= t.rightEnd);
 			// std::cout << readNames[std::get<0>(match)] << "\t" << readKmerLengths[std::get<0>(match)] << "\t" << std::get<1>(match) << "\t" << std::get<2>(match) << "\t" << readNames[std::get<3>(match)] << "\t" << readKmerLengths[std::get<3>(match)] << "\t" << std::get<4>(match) << "\t" << std::get<5>(match) << "\t" << (std::get<6>(match) ? "fw" : "bw") << std::endl;
 		}
-		kmermatches.insert(kmermatches.end(), matches.begin(), matches.end());
 	}
-	std::cerr << kmermatches.size() << " kmer matches" << std::endl;
-	makeGraph(readKmerLengths, kmermatches, minCoverage, "graph.gfa", graphk);
+	std::cerr << kmerMatchCount << " kmer matches" << std::endl;
+	makeGraph(readKmerLengths, matches, minCoverage, "graph.gfa", graphk);
 	std::cerr << result.numberReads << " reads" << std::endl;
 	std::cerr << numWindowChunks << " distinct windowchunks" << std::endl;
 	std::cerr << result.totalReadChunkMatches << " read-windowchunk matches (except unique)" << std::endl;
