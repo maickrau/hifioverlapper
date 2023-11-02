@@ -398,7 +398,7 @@ std::pair<size_t, size_t> getLinearTo2dIndices(const size_t linearKey, const Ran
 	return std::make_pair(groupi, posi);
 }
 
-void buildIntervalTree(const std::vector<size_t>& readLengths, const RankBitvector& kmermatchToGroup, const std::vector<size_t>& numKmerMatchesBeforeGroupStart, const std::vector<MatchGroup>& matches, std::vector<size_t>& relevantMatches, std::vector<size_t>& relevantMatchTreeMaxRight, std::vector<size_t>& relevantMatchTreeMinLeft, const size_t readi)
+void buildIntervalTree(const std::vector<size_t>& readLengths, const RankBitvector& kmermatchToGroup, const std::vector<size_t>& numKmerMatchesBeforeGroupStart, const std::vector<MatchGroup>& matches, std::vector<size_t>& relevantMatches, std::vector<uint32_t>& relevantMatchTreeMaxRight, std::vector<uint32_t>& relevantMatchTreeMinLeft, const size_t readi)
 {
 	const uint64_t firstBit = 1ull << 63ull;
 	const uint64_t mask = firstBit-1;
@@ -474,7 +474,7 @@ void buildIntervalTree(const std::vector<size_t>& readLengths, const RankBitvect
 }
 
 template <typename F>
-void iterateIntervalTreeAlnMatches(const std::vector<size_t>& readLengths, const std::vector<size_t>& relevantMatches, const std::vector<std::pair<size_t, size_t>>& matchLeftSpan, const std::vector<std::pair<size_t, size_t>>& matchRightSpan, const std::vector<size_t>& relevantMatchTreeMaxRight, const std::vector<size_t>& relevantMatchTreeMinLeft, const size_t readi, const size_t intervalStart, const size_t intervalEnd, F callback)
+void iterateIntervalTreeAlnMatches(const std::vector<size_t>& readLengths, const std::vector<size_t>& relevantMatches, const std::vector<std::pair<uint32_t, uint32_t>>& matchLeftSpan, const std::vector<std::pair<uint32_t, uint32_t>>& matchRightSpan, const std::vector<uint32_t>& relevantMatchTreeMaxRight, const std::vector<uint32_t>& relevantMatchTreeMinLeft, const size_t readi, const size_t intervalStart, const size_t intervalEnd, F callback)
 {
 	const uint64_t firstBit = 1ull << 63ull;
 	const uint64_t mask = firstBit-1;
@@ -608,16 +608,16 @@ std::vector<RankBitvector> extendBreakpoints(const std::vector<size_t>& readLeng
 		kmerNumber += matches[groupi].matches.size();
 	}
 	kmermatchToGroup.buildRanks();
-	std::vector<std::vector<size_t>> relevantMatchTreeMaxRight;
-	std::vector<std::vector<size_t>> relevantMatchTreeMinLeft;
+	std::vector<std::vector<uint32_t>> relevantMatchTreeMaxRight;
+	std::vector<std::vector<uint32_t>> relevantMatchTreeMinLeft;
 	relevantMatchTreeMaxRight.resize(relevantMatches.size());
 	relevantMatchTreeMinLeft.resize(relevantMatches.size());
 	for (size_t i = 0; i < relevantMatches.size(); i++)
 	{
 		buildIntervalTree(readLengths, kmermatchToGroup, numKmerMatchesBeforeGroupStart, matches, relevantMatches[i], relevantMatchTreeMaxRight[i], relevantMatchTreeMinLeft[i], i);
 	}
-	std::vector<std::pair<size_t, size_t>> matchLeftSpan;
-	std::vector<std::pair<size_t, size_t>> matchRightSpan;
+	std::vector<std::pair<uint32_t, uint32_t>> matchLeftSpan;
+	std::vector<std::pair<uint32_t, uint32_t>> matchRightSpan;
 	matchLeftSpan.resize(kmerNumber);
 	matchRightSpan.resize(kmerNumber);
 	kmerNumber = 0;
