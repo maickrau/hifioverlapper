@@ -589,10 +589,13 @@ void makeGraph(const std::vector<size_t>& readLengths, const std::vector<MatchGr
 	}
 	std::cerr << countBreakpoints << " breakpoints" << std::endl;
 	std::vector<uint64_t> segments = mergeSegments(readLengths, matches, breakpoints, countBreakpoints);
+	std::cerr << segments.size() << " segments" << std::endl;
 	phmap::flat_hash_map<uint64_t, size_t> segmentToNode = getSegmentToNode(segments);
+	std::cerr << segmentToNode.size() << " nodes pre coverage filter" << std::endl;
 	std::vector<size_t> nodeCoverage = getNodeCoverage(segments, segmentToNode);
 	std::vector<size_t> nodeLength = getNodeLengths(segments, segmentToNode, breakpoints);
 	phmap::flat_hash_map<std::pair<std::pair<size_t, bool>, std::pair<size_t, bool>>, size_t> edgeCoverages = getEdgeCoverages(readLengths, segmentToNode, segments, breakpoints);
+	std::cerr << edgeCoverages.size() << " edges pre coverage filter" << std::endl;
 	writeGraph(outputFileName, nodeCoverage, nodeLength, edgeCoverages, minCoverage, k);
 }
 
@@ -795,8 +798,9 @@ int main(int argc, char** argv)
 			readSequences.emplace_back(sequence);
 		});
 	}
-	size_t numWindowChunks = matchIndex.numWindowChunks();
-	size_t numUniqueChunks = matchIndex.numUniqueChunks();
+	std::cerr << readSequences.size() << " reads" << std::endl;
+	std::cerr << matchIndex.numWindowChunks() << " distinct windowchunks" << std::endl;
+	std::cerr << matchIndex.numUniqueChunks() << " windowchunks have only one read" << std::endl;
 	matchIndex.clearConstructionVariablesAndCompact();
 	const std::vector<size_t>& readBasepairLengths = storage.getRawReadLengths();
 	std::vector<size_t> readKmerLengths;
@@ -847,6 +851,12 @@ int main(int argc, char** argv)
 			matches.back().rightEnd = rightend+1;
 		}
 	});
+	std::cerr << result.totalReadChunkMatches << " read-windowchunk matches (except unique)" << std::endl;
+	std::cerr << result.readsWithMatch << " reads with a match" << std::endl;
+	std::cerr << result.readPairMatches << " read-read matches" << std::endl;
+	std::cerr << result.readChainMatches << " chain matches" << std::endl;
+	std::cerr << result.totalMatches << " window matches" << std::endl;
+	std::cerr << result.maxPerChunk << " max windowchunk size" << std::endl;
 	// fw-fw matches first, fw-bw matches later
 	std::stable_sort(matches.begin(), matches.end(), [](const auto& left, const auto& right){ return left.rightFw && !right.rightFw; });
 	std::cerr << matches.size() << " mapping matches" << std::endl;
@@ -864,13 +874,4 @@ int main(int argc, char** argv)
 	}
 	std::cerr << kmerMatchCount << " kmer matches" << std::endl;
 	makeGraph(readKmerLengths, matches, minCoverage, "graph.gfa", graphk);
-	std::cerr << result.numberReads << " reads" << std::endl;
-	std::cerr << numWindowChunks << " distinct windowchunks" << std::endl;
-	std::cerr << result.totalReadChunkMatches << " read-windowchunk matches (except unique)" << std::endl;
-	std::cerr << numUniqueChunks << " windowchunks have only one read" << std::endl;
-	std::cerr << result.readsWithMatch << " reads with a match" << std::endl;
-	std::cerr << result.readPairMatches << " read-read matches" << std::endl;
-	std::cerr << result.readChainMatches << " chain matches" << std::endl;
-	std::cerr << result.totalMatches << " window matches" << std::endl;
-	std::cerr << result.maxPerChunk << " max windowchunk size" << std::endl;
 }
