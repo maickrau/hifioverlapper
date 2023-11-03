@@ -481,42 +481,10 @@ std::vector<RankBitvector> extendBreakpoints(const std::vector<size_t>& readLeng
 		breakpoints[i].set(0, true);
 		breakpoints[i].set(readLengths[i], true);
 	}
-	std::vector<std::vector<uint64_t>> relevantMatches;
-	relevantMatches.resize(readLengths.size());
-	size_t firstFwBwMatch = std::numeric_limits<size_t>::max();
-	RankBitvector kmermatchToGroup;
-	std::vector<size_t> numKmerMatchesBeforeGroupStart;
-	numKmerMatchesBeforeGroupStart.resize(matches.size(), 0);
-	size_t totalMatchCount = 0;
 	for (size_t groupi = 0; groupi < matches.size(); groupi++)
 	{
-		totalMatchCount += matches[groupi].matches.size();
-	}
-	kmermatchToGroup.resize(totalMatchCount);
-	assert(matches.size() <= (size_t)std::numeric_limits<uint32_t>::max()/2);
-	size_t kmerNumber = 0;
-	for (size_t groupi = 0; groupi < matches.size(); groupi++)
-	{
-		numKmerMatchesBeforeGroupStart[groupi] = kmerNumber;
-		kmermatchToGroup.set(kmerNumber, true);
-		if (matches[groupi].rightFw)
-		{
-			assert(firstFwBwMatch == std::numeric_limits<size_t>::max());
-		}
-		else
-		{
-			if (firstFwBwMatch == std::numeric_limits<size_t>::max())
-			{
-				firstFwBwMatch = kmerNumber;
-			}
-			assert(kmerNumber >= firstFwBwMatch);
-		}
 		for (size_t posi = 0; posi < matches[groupi].matches.size(); posi++)
 		{
-			assert(matches[groupi].matches.size() <= (size_t)std::numeric_limits<uint32_t>::max());
-			size_t key = kmerNumber + posi;
-			relevantMatches[matches[groupi].leftRead].emplace_back(key);
-			relevantMatches[matches[groupi].rightRead].emplace_back(key + firstBitUint64_t);
 			breakpoints[matches[groupi].leftRead].set(matches[groupi].matches[posi].leftStart, true);
 			breakpoints[matches[groupi].leftRead].set(matches[groupi].matches[posi].leftStart + matches[groupi].matches[posi].length, true);
 			if (matches[groupi].rightFw)
@@ -530,100 +498,28 @@ std::vector<RankBitvector> extendBreakpoints(const std::vector<size_t>& readLeng
 				breakpoints[matches[groupi].rightRead].set(readLengths[matches[groupi].rightRead] - (matches[groupi].matches[posi].rightStart + matches[groupi].matches[posi].length), true);
 			}
 		}
-		kmerNumber += matches[groupi].matches.size();
 	}
-	assert(kmerNumber == totalMatchCount);
-	kmermatchToGroup.buildRanks();
-	std::vector<std::vector<uint32_t>> relevantMatchTreeMaxRight;
-	std::vector<std::vector<uint32_t>> relevantMatchTreeMinLeft;
-	relevantMatchTreeMaxRight.resize(relevantMatches.size());
-	relevantMatchTreeMinLeft.resize(relevantMatches.size());
-	for (size_t i = 0; i < relevantMatches.size(); i++)
+	while (true)
 	{
-		buildIntervalTree(readLengths, kmermatchToGroup, numKmerMatchesBeforeGroupStart, matches, relevantMatches[i], relevantMatchTreeMaxRight[i], relevantMatchTreeMinLeft[i], i);
-	}
-	std::vector<bool> inQueue;
-	inQueue.resize(totalMatchCount, true);
-	std::vector<size_t> fwfwCheckQueue;
-	std::vector<size_t> fwbwCheckQueue;
-	size_t nextUnqueued = 0;
-	while (fwfwCheckQueue.size() >= 1 || fwbwCheckQueue.size() >= 1 || nextUnqueued < totalMatchCount)
-	{
-		size_t matchkey;
-		size_t groupi, posi;
-		std::pair<bool, bool> addedAny;
-		if (fwfwCheckQueue.size() >= 1)
+		bool changed = false;
+		for (size_t groupi = 0; groupi < matches.size(); groupi++)
 		{
-			matchkey = fwfwCheckQueue.back();
-			fwfwCheckQueue.pop_back();
-		}
-		else if (nextUnqueued < firstFwBwMatch && nextUnqueued < totalMatchCount)
-		{
-			matchkey = nextUnqueued;
-			nextUnqueued += 1;
-		}
-		else if (fwbwCheckQueue.size() >= 1)
-		{
-			matchkey = fwbwCheckQueue.back();
-			fwbwCheckQueue.pop_back();
-		}
-		else
-		{
-			assert(nextUnqueued >= firstFwBwMatch);
-			assert(nextUnqueued < totalMatchCount);
-			matchkey = nextUnqueued;
-			nextUnqueued += 1;
-		}
-		inQueue[matchkey] = false;
-		std::tie(groupi, posi) = getLinearTo2dIndices(matchkey, kmermatchToGroup, numKmerMatchesBeforeGroupStart);
-		if (matches[groupi].rightFw)
-		{
-			addedAny = extendBreakpointsFwFw(readLengths, breakpoints, matches[groupi].leftRead, matches[groupi].matches[posi].leftStart, matches[groupi].matches[posi].leftStart+matches[groupi].matches[posi].length, matches[groupi].rightRead, matches[groupi].matches[posi].rightStart, matches[groupi].matches[posi].rightStart+matches[groupi].matches[posi].length);
-		}
-		else
-		{
-			addedAny = extendBreakpointsFwBw(readLengths, breakpoints, matches[groupi].leftRead, matches[groupi].matches[posi].leftStart, matches[groupi].matches[posi].leftStart+matches[groupi].matches[posi].length, matches[groupi].rightRead, matches[groupi].matches[posi].rightStart, matches[groupi].matches[posi].rightStart+matches[groupi].matches[posi].length);
-		}
-		if (addedAny.first)
-		{
-			auto span = getMatchSpan(readLengths, matches[groupi], matches[groupi].matches[posi], matches[groupi].leftRead);
-			iterateIntervalTreeAlnMatches(readLengths, relevantMatches[matches[groupi].leftRead], matches, kmermatchToGroup, numKmerMatchesBeforeGroupStart, relevantMatchTreeMaxRight[matches[groupi].leftRead], relevantMatchTreeMinLeft[matches[groupi].leftRead], matches[groupi].leftRead, span.first, span.second, [firstFwBwMatch, &fwfwCheckQueue, &fwbwCheckQueue, &inQueue, matchkey, &kmermatchToGroup, &numKmerMatchesBeforeGroupStart](size_t aln)
+			for (size_t posi = 0; posi < matches[groupi].matches.size(); posi++)
 			{
-				size_t rawAln = aln & maskUint64_t;
-				if (inQueue[rawAln]) return;
-				if (rawAln == matchkey) return;
-				if (rawAln < firstFwBwMatch)
+				std::pair<bool, bool> addedAny;
+				if (matches[groupi].rightFw)
 				{
-					fwfwCheckQueue.push_back(rawAln);
+					addedAny = extendBreakpointsFwFw(readLengths, breakpoints, matches[groupi].leftRead, matches[groupi].matches[posi].leftStart, matches[groupi].matches[posi].leftStart+matches[groupi].matches[posi].length, matches[groupi].rightRead, matches[groupi].matches[posi].rightStart, matches[groupi].matches[posi].rightStart+matches[groupi].matches[posi].length);
 				}
 				else
 				{
-					fwbwCheckQueue.push_back(rawAln);
+					addedAny = extendBreakpointsFwBw(readLengths, breakpoints, matches[groupi].leftRead, matches[groupi].matches[posi].leftStart, matches[groupi].matches[posi].leftStart+matches[groupi].matches[posi].length, matches[groupi].rightRead, matches[groupi].matches[posi].rightStart, matches[groupi].matches[posi].rightStart+matches[groupi].matches[posi].length);
 				}
-				inQueue[rawAln] = true;
-			});
+				if (addedAny.first || addedAny.second) changed = true;
+			}
 		}
-		if (addedAny.second)
-		{
-			auto span = getMatchSpan(readLengths, matches[groupi], matches[groupi].matches[posi], matches[groupi].rightRead);
-			iterateIntervalTreeAlnMatches(readLengths, relevantMatches[matches[groupi].rightRead], matches, kmermatchToGroup, numKmerMatchesBeforeGroupStart, relevantMatchTreeMaxRight[matches[groupi].rightRead], relevantMatchTreeMinLeft[matches[groupi].rightRead], matches[groupi].rightRead, span.first, span.second, [firstFwBwMatch, &fwfwCheckQueue, &fwbwCheckQueue, &inQueue, matchkey, &kmermatchToGroup, &numKmerMatchesBeforeGroupStart](size_t aln)
-			{
-				size_t rawAln = aln & maskUint64_t;
-				if (inQueue[rawAln]) return;
-				if (rawAln == matchkey) return;
-				if (rawAln < firstFwBwMatch)
-				{
-					fwfwCheckQueue.push_back(rawAln);
-				}
-				else
-				{
-					fwbwCheckQueue.push_back(rawAln);
-				}
-				inQueue[rawAln] = true;
-			});
-		}
+		if (!changed) break;
 	}
-	assert(nextUnqueued == totalMatchCount);
 	for (size_t i = 0; i < breakpoints.size(); i++) breakpoints[i].buildRanks();
 	return breakpoints;
 }
