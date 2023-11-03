@@ -335,7 +335,11 @@ void buildIntervalTree(const std::vector<size_t>& readLengths, const RankBitvect
 		return getMatchSpan(readLengths, matches[leftGroup], matches[leftGroup].matches[leftPos], readi).first < getMatchSpan(readLengths, matches[rightGroup], matches[rightGroup].matches[rightPos], readi).first;
 	});
 	size_t test = sortedMatches.size();
-	relevantMatches.assign(relevantMatches.size(), std::numeric_limits<size_t>::max());
+	{
+		std::vector<size_t> tmp;
+		std::swap(relevantMatches, tmp);
+	}
+	relevantMatches.resize(sortedMatches.size(), std::numeric_limits<size_t>::max());
 	size_t treeMaxDepth = 0;
 	while (test != 0)
 	{
@@ -479,7 +483,7 @@ std::vector<RankBitvector> extendBreakpoints(const std::vector<size_t>& readLeng
 	}
 	std::vector<std::vector<uint64_t>> relevantMatches;
 	relevantMatches.resize(readLengths.size());
-	size_t firstFwBwMatch = matches.size();
+	size_t firstFwBwMatch = std::numeric_limits<size_t>::max();
 	RankBitvector kmermatchToGroup;
 	std::vector<size_t> numKmerMatchesBeforeGroupStart;
 	numKmerMatchesBeforeGroupStart.resize(matches.size(), 0);
@@ -497,15 +501,15 @@ std::vector<RankBitvector> extendBreakpoints(const std::vector<size_t>& readLeng
 		kmermatchToGroup.set(kmerNumber, true);
 		if (matches[groupi].rightFw)
 		{
-			assert(firstFwBwMatch == matches.size());
+			assert(firstFwBwMatch == std::numeric_limits<size_t>::max());
 		}
 		else
 		{
-			if (firstFwBwMatch == matches.size())
+			if (firstFwBwMatch == std::numeric_limits<size_t>::max())
 			{
-				firstFwBwMatch = groupi;
+				firstFwBwMatch = kmerNumber;
 			}
-			assert(groupi >= firstFwBwMatch);
+			assert(kmerNumber >= firstFwBwMatch);
 		}
 		for (size_t posi = 0; posi < matches[groupi].matches.size(); posi++)
 		{
@@ -542,25 +546,8 @@ std::vector<RankBitvector> extendBreakpoints(const std::vector<size_t>& readLeng
 	inQueue.resize(totalMatchCount, true);
 	std::vector<size_t> fwfwCheckQueue;
 	std::vector<size_t> fwbwCheckQueue;
-	kmerNumber = 0;
-	for (size_t groupi = 0; groupi < firstFwBwMatch; groupi++)
-	{
-		for (size_t posi = 0; posi < matches[groupi].matches.size(); posi++)
-		{
-			fwfwCheckQueue.emplace_back(kmerNumber);
-			kmerNumber += 1;
-		}
-	}
-	for (size_t groupi = firstFwBwMatch; groupi < matches.size(); groupi++)
-	{
-		for (size_t posi = 0; posi < matches[groupi].matches.size(); posi++)
-		{
-			fwbwCheckQueue.emplace_back(kmerNumber);
-			kmerNumber += 1;
-		}
-	}
-	assert(kmerNumber == totalMatchCount);
-	while (fwfwCheckQueue.size() >= 1 || fwbwCheckQueue.size() >= 1)
+	size_t nextUnqueued = 0;
+	while (fwfwCheckQueue.size() >= 1 || fwbwCheckQueue.size() >= 1 || nextUnqueued < totalMatchCount)
 	{
 		size_t matchkey;
 		size_t groupi, posi;
@@ -568,20 +555,33 @@ std::vector<RankBitvector> extendBreakpoints(const std::vector<size_t>& readLeng
 		if (fwfwCheckQueue.size() >= 1)
 		{
 			matchkey = fwfwCheckQueue.back();
-			std::tie(groupi, posi) = getLinearTo2dIndices(matchkey, kmermatchToGroup, numKmerMatchesBeforeGroupStart);
-			assert(matches[groupi].rightFw);
-			inQueue[matchkey] = false;
 			fwfwCheckQueue.pop_back();
+		}
+		else if (nextUnqueued < firstFwBwMatch && nextUnqueued < totalMatchCount)
+		{
+			matchkey = nextUnqueued;
+			nextUnqueued += 1;
+		}
+		else if (fwbwCheckQueue.size() >= 1)
+		{
+			matchkey = fwbwCheckQueue.back();
+			fwbwCheckQueue.pop_back();
+		}
+		else
+		{
+			assert(nextUnqueued >= firstFwBwMatch);
+			assert(nextUnqueued < totalMatchCount);
+			matchkey = nextUnqueued;
+			nextUnqueued += 1;
+		}
+		inQueue[matchkey] = false;
+		std::tie(groupi, posi) = getLinearTo2dIndices(matchkey, kmermatchToGroup, numKmerMatchesBeforeGroupStart);
+		if (matches[groupi].rightFw)
+		{
 			addedAny = extendBreakpointsFwFw(readLengths, breakpoints, matches[groupi].leftRead, matches[groupi].matches[posi].leftStart, matches[groupi].matches[posi].leftStart+matches[groupi].matches[posi].length, matches[groupi].rightRead, matches[groupi].matches[posi].rightStart, matches[groupi].matches[posi].rightStart+matches[groupi].matches[posi].length);
 		}
 		else
 		{
-			assert(fwbwCheckQueue.size() >= 1);
-			matchkey = fwbwCheckQueue.back();
-			std::tie(groupi, posi) = getLinearTo2dIndices(matchkey, kmermatchToGroup, numKmerMatchesBeforeGroupStart);
-			assert(!matches[groupi].rightFw);
-			inQueue[matchkey] = false;
-			fwbwCheckQueue.pop_back();
 			addedAny = extendBreakpointsFwBw(readLengths, breakpoints, matches[groupi].leftRead, matches[groupi].matches[posi].leftStart, matches[groupi].matches[posi].leftStart+matches[groupi].matches[posi].length, matches[groupi].rightRead, matches[groupi].matches[posi].rightStart, matches[groupi].matches[posi].rightStart+matches[groupi].matches[posi].length);
 		}
 		if (addedAny.first)
@@ -592,8 +592,7 @@ std::vector<RankBitvector> extendBreakpoints(const std::vector<size_t>& readLeng
 				size_t rawAln = aln & maskUint64_t;
 				if (inQueue[rawAln]) return;
 				if (rawAln == matchkey) return;
-				auto pos = getLinearTo2dIndices(rawAln, kmermatchToGroup, numKmerMatchesBeforeGroupStart);
-				if (pos.first < firstFwBwMatch)
+				if (rawAln < firstFwBwMatch)
 				{
 					fwfwCheckQueue.push_back(rawAln);
 				}
@@ -612,8 +611,7 @@ std::vector<RankBitvector> extendBreakpoints(const std::vector<size_t>& readLeng
 				size_t rawAln = aln & maskUint64_t;
 				if (inQueue[rawAln]) return;
 				if (rawAln == matchkey) return;
-				auto pos = getLinearTo2dIndices(rawAln, kmermatchToGroup, numKmerMatchesBeforeGroupStart);
-				if (pos.first < firstFwBwMatch)
+				if (rawAln < firstFwBwMatch)
 				{
 					fwfwCheckQueue.push_back(rawAln);
 				}
@@ -625,6 +623,7 @@ std::vector<RankBitvector> extendBreakpoints(const std::vector<size_t>& readLeng
 			});
 		}
 	}
+	assert(nextUnqueued == totalMatchCount);
 	for (size_t i = 0; i < breakpoints.size(); i++) breakpoints[i].buildRanks();
 	return breakpoints;
 }
