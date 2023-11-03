@@ -749,6 +749,15 @@ std::vector<size_t> getNodeLengths(const std::vector<std::vector<std::tuple<uint
 void makeGraph(const std::vector<size_t>& readLengths, const std::vector<MatchGroup>& matches, const size_t minCoverage, const std::string& outputFileName, const size_t k)
 {
 	std::vector<RankBitvector> breakpoints = extendBreakpoints(readLengths, matches);
+	size_t countBreakpoints = 0;
+	for (size_t i = 0; i < breakpoints.size(); i++)
+	{
+		for (size_t j = 0; j < breakpoints[i].size(); j++)
+		{
+			if (breakpoints[i].get(j)) countBreakpoints += 1;
+		}
+	}
+	std::cerr << countBreakpoints << " breakpoints" << std::endl;
 	std::vector<std::vector<std::tuple<uint32_t, uint32_t, bool>>> segments;
 	std::vector<std::vector<uint32_t>> segmentStarts;
 	std::tie(segments, segmentStarts) = mergeSegments(readLengths, matches, breakpoints);
