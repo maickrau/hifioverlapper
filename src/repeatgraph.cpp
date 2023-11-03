@@ -17,9 +17,9 @@ public:
 	class Match
 	{
 	public:
-		uint32_t leftStart;
-		uint32_t rightStart;
-		uint32_t length;
+		uint16_t leftStart;
+		uint16_t rightStart;
+		uint16_t length;
 	};
 	size_t leftRead;
 	size_t rightRead;
@@ -160,7 +160,7 @@ std::vector<uint64_t> mergeSegments(const std::vector<size_t>& readLengths, cons
 	{
 		for (size_t posi = 0; posi < matches[groupi].matches.size(); posi++)
 		{
-			mergeSegments(readLengths, countBeforeRead,result, breakpoints, matches[groupi].leftRead, true, matches[groupi].matches[posi].leftStart, matches[groupi].matches[posi].leftStart+matches[groupi].matches[posi].length, matches[groupi].rightRead, matches[groupi].rightFw, matches[groupi].matches[posi].rightStart, matches[groupi].matches[posi].rightStart+matches[groupi].matches[posi].length);
+			mergeSegments(readLengths, countBeforeRead,result, breakpoints, matches[groupi].leftRead, true, matches[groupi].leftStart + matches[groupi].matches[posi].leftStart, matches[groupi].leftStart + matches[groupi].matches[posi].leftStart+matches[groupi].matches[posi].length, matches[groupi].rightRead, matches[groupi].rightFw, matches[groupi].rightStart + matches[groupi].matches[posi].rightStart, matches[groupi].rightStart + matches[groupi].matches[posi].rightStart+matches[groupi].matches[posi].length);
 		}
 	}
 	for (size_t i = 0; i < result.size(); i++)
@@ -485,17 +485,17 @@ std::vector<RankBitvector> extendBreakpoints(const std::vector<size_t>& readLeng
 	{
 		for (size_t posi = 0; posi < matches[groupi].matches.size(); posi++)
 		{
-			breakpoints[matches[groupi].leftRead].set(matches[groupi].matches[posi].leftStart, true);
-			breakpoints[matches[groupi].leftRead].set(matches[groupi].matches[posi].leftStart + matches[groupi].matches[posi].length, true);
+			breakpoints[matches[groupi].leftRead].set(matches[groupi].leftStart + matches[groupi].matches[posi].leftStart, true);
+			breakpoints[matches[groupi].leftRead].set(matches[groupi].leftStart + matches[groupi].matches[posi].leftStart + matches[groupi].matches[posi].length, true);
 			if (matches[groupi].rightFw)
 			{
-				breakpoints[matches[groupi].rightRead].set(matches[groupi].matches[posi].rightStart, true);
-				breakpoints[matches[groupi].rightRead].set(matches[groupi].matches[posi].rightStart + matches[groupi].matches[posi].length, true);
+				breakpoints[matches[groupi].rightRead].set(matches[groupi].rightStart + matches[groupi].matches[posi].rightStart, true);
+				breakpoints[matches[groupi].rightRead].set(matches[groupi].rightStart + matches[groupi].matches[posi].rightStart + matches[groupi].matches[posi].length, true);
 			}
 			else
 			{
-				breakpoints[matches[groupi].rightRead].set(readLengths[matches[groupi].rightRead] - matches[groupi].matches[posi].rightStart, true);
-				breakpoints[matches[groupi].rightRead].set(readLengths[matches[groupi].rightRead] - (matches[groupi].matches[posi].rightStart + matches[groupi].matches[posi].length), true);
+				breakpoints[matches[groupi].rightRead].set(readLengths[matches[groupi].rightRead] - (matches[groupi].rightStart + matches[groupi].matches[posi].rightStart), true);
+				breakpoints[matches[groupi].rightRead].set(readLengths[matches[groupi].rightRead] - (matches[groupi].rightStart + matches[groupi].matches[posi].rightStart + matches[groupi].matches[posi].length), true);
 			}
 		}
 	}
@@ -509,11 +509,11 @@ std::vector<RankBitvector> extendBreakpoints(const std::vector<size_t>& readLeng
 				std::pair<bool, bool> addedAny;
 				if (matches[groupi].rightFw)
 				{
-					addedAny = extendBreakpointsFwFw(readLengths, breakpoints, matches[groupi].leftRead, matches[groupi].matches[posi].leftStart, matches[groupi].matches[posi].leftStart+matches[groupi].matches[posi].length, matches[groupi].rightRead, matches[groupi].matches[posi].rightStart, matches[groupi].matches[posi].rightStart+matches[groupi].matches[posi].length);
+					addedAny = extendBreakpointsFwFw(readLengths, breakpoints, matches[groupi].leftRead, matches[groupi].leftStart + matches[groupi].matches[posi].leftStart, matches[groupi].leftStart + matches[groupi].matches[posi].leftStart+matches[groupi].matches[posi].length, matches[groupi].rightRead, matches[groupi].rightStart + matches[groupi].matches[posi].rightStart, matches[groupi].rightStart + matches[groupi].matches[posi].rightStart+matches[groupi].matches[posi].length);
 				}
 				else
 				{
-					addedAny = extendBreakpointsFwBw(readLengths, breakpoints, matches[groupi].leftRead, matches[groupi].matches[posi].leftStart, matches[groupi].matches[posi].leftStart+matches[groupi].matches[posi].length, matches[groupi].rightRead, matches[groupi].matches[posi].rightStart, matches[groupi].matches[posi].rightStart+matches[groupi].matches[posi].length);
+					addedAny = extendBreakpointsFwBw(readLengths, breakpoints, matches[groupi].leftRead, matches[groupi].leftStart + matches[groupi].matches[posi].leftStart, matches[groupi].leftStart + matches[groupi].matches[posi].leftStart+matches[groupi].matches[posi].length, matches[groupi].rightRead, matches[groupi].rightStart + matches[groupi].matches[posi].rightStart, matches[groupi].rightStart + matches[groupi].matches[posi].rightStart+matches[groupi].matches[posi].length);
 				}
 				if (addedAny.first || addedAny.second) changed = true;
 			}
@@ -597,7 +597,7 @@ void makeGraph(const std::vector<size_t>& readLengths, const std::vector<MatchGr
 }
 
 template <typename F>
-void iterateKmerMatchPositions(const uint64_t kmer, const phmap::flat_hash_map<uint64_t, uint32_t>& firstPositions, const phmap::flat_hash_map<uint64_t, std::vector<uint32_t>>& extraPositions, F callback)
+void iterateKmerMatchPositions(const uint64_t kmer, const phmap::flat_hash_map<uint64_t, uint16_t>& firstPositions, const phmap::flat_hash_map<uint64_t, std::vector<uint16_t>>& extraPositions, F callback)
 {
 	auto found = firstPositions.find(kmer);
 	if (found == firstPositions.end()) return;
@@ -676,6 +676,8 @@ void iterateSyncmers(const std::vector<TwobitString>& readSequences, const size_
 
 void getKmerMatches(const std::vector<TwobitString>& readSequences, MatchGroup& mappingMatch, const size_t k, const size_t w)
 {
+	assert(mappingMatch.leftEnd - mappingMatch.leftStart < std::numeric_limits<uint16_t>::max());
+	assert(mappingMatch.rightEnd - mappingMatch.rightStart < std::numeric_limits<uint16_t>::max());
 	assert(k <= 31);
 	assert(k % 2 == 1);
 	size_t leftStart = mappingMatch.leftStart;
@@ -685,8 +687,8 @@ void getKmerMatches(const std::vector<TwobitString>& readSequences, MatchGroup& 
 	bool rightFw = mappingMatch.rightFw;
 	size_t left = mappingMatch.leftRead;
 	size_t right = mappingMatch.rightRead;
-	phmap::flat_hash_map<uint64_t, uint32_t> firstKmerPositionInLeft;
-	phmap::flat_hash_map<uint64_t, std::vector<uint32_t>> extraKmerPositionsInLeft;
+	phmap::flat_hash_map<uint64_t, uint16_t> firstKmerPositionInLeft;
+	phmap::flat_hash_map<uint64_t, std::vector<uint16_t>> extraKmerPositionsInLeft;
 	iterateSyncmers(readSequences, k, 20, left, leftStart, leftEnd, true, [&firstKmerPositionInLeft, &extraKmerPositionsInLeft](const size_t kmer, const size_t pos)
 	{
 		if (firstKmerPositionInLeft.count(kmer) == 0)
@@ -732,9 +734,12 @@ void getKmerMatches(const std::vector<TwobitString>& readSequences, MatchGroup& 
 				assert(currentMatchesPerDiagonal[diagonal].second != std::numeric_limits<size_t>::max());
 				assert(currentMatchesPerDiagonal[diagonal].second > currentMatchesPerDiagonal[diagonal].first);
 				assert(currentMatchesPerDiagonal[diagonal].first + zeroDiagonal >= diagonal);
-				size_t leftMatchStart = leftStart + currentMatchesPerDiagonal[diagonal].first + zeroDiagonal - diagonal;
-				size_t rightMatchStart = rightStart + currentMatchesPerDiagonal[diagonal].first;
+				size_t leftMatchStart = currentMatchesPerDiagonal[diagonal].first + zeroDiagonal - diagonal;
+				size_t rightMatchStart = currentMatchesPerDiagonal[diagonal].first;
 				size_t length = currentMatchesPerDiagonal[diagonal].second - currentMatchesPerDiagonal[diagonal].first;
+				assert(leftMatchStart < std::numeric_limits<uint16_t>::max());
+				assert(rightMatchStart < std::numeric_limits<uint16_t>::max());
+				assert(length < std::numeric_limits<uint16_t>::max());
 				mappingMatch.matches.emplace_back();
 				mappingMatch.matches.back().leftStart = leftMatchStart;
 				mappingMatch.matches.back().rightStart = rightMatchStart;
@@ -750,9 +755,12 @@ void getKmerMatches(const std::vector<TwobitString>& readSequences, MatchGroup& 
 		assert(currentMatchesPerDiagonal[diagonal].second != std::numeric_limits<size_t>::max());
 		assert(currentMatchesPerDiagonal[diagonal].second > currentMatchesPerDiagonal[diagonal].first);
 		assert(currentMatchesPerDiagonal[diagonal].first + zeroDiagonal >= diagonal);
-		size_t leftMatchStart = leftStart + currentMatchesPerDiagonal[diagonal].first + zeroDiagonal - diagonal;
-		size_t rightMatchStart = rightStart + currentMatchesPerDiagonal[diagonal].first;
+		size_t leftMatchStart = currentMatchesPerDiagonal[diagonal].first + zeroDiagonal - diagonal;
+		size_t rightMatchStart = currentMatchesPerDiagonal[diagonal].first;
 		size_t length = currentMatchesPerDiagonal[diagonal].second - currentMatchesPerDiagonal[diagonal].first;
+		assert(leftMatchStart < std::numeric_limits<uint16_t>::max());
+		assert(rightMatchStart < std::numeric_limits<uint16_t>::max());
+		assert(length < std::numeric_limits<uint16_t>::max());
 		mappingMatch.matches.emplace_back();
 		mappingMatch.matches.back().leftStart = leftMatchStart;
 		mappingMatch.matches.back().rightStart = rightMatchStart;
@@ -769,6 +777,7 @@ int main(int argc, char** argv)
 	size_t minAlignmentLength = std::stoull(argv[5]);
 	const size_t graphk = 31;
 	const size_t minCoverage = 2;
+	const size_t graphd = 50;
 	std::vector<std::string> readFiles;
 	for (size_t i = 6; i < argc; i++)
 	{
@@ -799,20 +808,44 @@ int main(int argc, char** argv)
 	const std::vector<std::string>& readNames = storage.getNames();
 	std::mutex printMutex;
 	std::vector<MatchGroup> matches;
-	auto result = matchIndex.iterateMatchChains(numThreads, storage.getRawReadLengths(), [&printMutex, &matches, minAlignmentLength](const size_t left, const size_t leftstart, const size_t leftend, const bool leftFw, const size_t right, const size_t rightstart, const size_t rightend, const bool rightFw)
+	auto result = matchIndex.iterateMatchChains(numThreads, storage.getRawReadLengths(), [&printMutex, &matches, minAlignmentLength, k, graphd](const size_t left, const size_t leftstart, const size_t leftend, const bool leftFw, const size_t right, const size_t rightstart, const size_t rightend, const bool rightFw)
 	{
 		if (leftend+1-leftstart < minAlignmentLength) return;
 		if (rightend+1-rightstart < minAlignmentLength) return;
 		std::lock_guard<std::mutex> lock { printMutex };
 		assert(leftFw);
-		matches.emplace_back();
-		matches.back().leftRead = left;
-		matches.back().rightRead = right;
-		matches.back().rightFw = rightFw;
-		matches.back().leftStart = leftstart;
-		matches.back().leftEnd = leftend+1;
-		matches.back().rightStart = rightstart;
-		matches.back().rightEnd = rightend+1;
+		size_t numAlnChunks = std::max(leftend+1-leftstart, rightend+1-rightstart)/(std::numeric_limits<uint16_t>::max()-k-graphd-100)+1;
+		assert(numAlnChunks >= 1);
+		if (numAlnChunks == 1)
+		{
+			matches.emplace_back();
+			matches.back().leftRead = left;
+			matches.back().rightRead = right;
+			matches.back().rightFw = rightFw;
+			matches.back().leftStart = leftstart;
+			matches.back().leftEnd = leftend+1;
+			matches.back().rightStart = rightstart;
+			matches.back().rightEnd = rightend+1;
+		}
+		else
+		{
+			assert(numAlnChunks >= 2);
+			size_t leftPerChunk = (double)(leftend+1-leftstart)/(double)numAlnChunks;
+			size_t rightPerChunk = (double)(rightend+1-rightstart)/(double)numAlnChunks;
+			for (size_t i = 0; i < numAlnChunks; i++)
+			{
+				matches.emplace_back();
+				matches.back().leftRead = left;
+				matches.back().rightRead = right;
+				matches.back().rightFw = rightFw;
+				matches.back().leftStart = leftstart + i * leftPerChunk;
+				matches.back().leftEnd = leftstart + (i+1) * leftPerChunk + k + graphd;
+				matches.back().rightStart = rightstart + i * rightPerChunk;
+				matches.back().rightEnd = rightstart + (i+1) * rightPerChunk + k + graphd;
+			}
+			matches.back().leftEnd = leftend+1;
+			matches.back().rightEnd = rightend+1;
+		}
 	});
 	// fw-fw matches first, fw-bw matches later
 	std::stable_sort(matches.begin(), matches.end(), [](const auto& left, const auto& right){ return left.rightFw && !right.rightFw; });
@@ -820,14 +853,12 @@ int main(int argc, char** argv)
 	size_t kmerMatchCount = 0;
 	for (auto& t : matches)
 	{
-		getKmerMatches(readSequences, t, graphk, 50);
+		getKmerMatches(readSequences, t, graphk, graphd);
 		kmerMatchCount += t.matches.size();
 		for (auto pos : t.matches)
 		{
-			assert(pos.leftStart >= t.leftStart);
-			assert(pos.rightStart >= t.rightStart);
-			assert(pos.leftStart + pos.length <= t.leftEnd);
-			assert(pos.rightStart + pos.length <= t.rightEnd);
+			assert(pos.length <= t.leftEnd - t.leftStart);
+			assert(pos.length <= t.rightEnd - t.rightStart);
 			// std::cout << readNames[std::get<0>(match)] << "\t" << readKmerLengths[std::get<0>(match)] << "\t" << std::get<1>(match) << "\t" << std::get<2>(match) << "\t" << readNames[std::get<3>(match)] << "\t" << readKmerLengths[std::get<3>(match)] << "\t" << std::get<4>(match) << "\t" << std::get<5>(match) << "\t" << (std::get<6>(match) ? "fw" : "bw") << std::endl;
 		}
 	}
