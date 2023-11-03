@@ -161,7 +161,7 @@ void mergeSegments(std::vector<std::vector<std::tuple<uint32_t, uint32_t, bool>>
 	result[std::get<0>(rightParent)][std::get<1>(rightParent)] = std::make_tuple(std::get<0>(leftParent), std::get<1>(leftParent), std::get<2>(leftParent) ^ std::get<2>(rightParent) ^ fw);
 }
 
-void mergeSegments(const std::vector<size_t>& readLengths, std::vector<std::vector<std::tuple<uint32_t, uint32_t, bool>>>& result, const std::vector<std::vector<uint32_t>>& segmentStarts, const std::vector<RankBitvector>& breakpoints, const size_t leftRead, const bool leftFw, const size_t leftStart, const size_t leftEnd, const size_t rightRead, const bool rightFw, const size_t rightStart, const size_t rightEnd)
+void mergeSegments(const std::vector<size_t>& readLengths, std::vector<std::vector<std::tuple<uint32_t, uint32_t, bool>>>& result, const std::vector<RankBitvector>& breakpoints, const size_t leftRead, const bool leftFw, const size_t leftStart, const size_t leftEnd, const size_t rightRead, const bool rightFw, const size_t rightStart, const size_t rightEnd)
 {
 	assert(leftFw);
 	assert(breakpoints[leftRead].get(leftStart));
@@ -169,8 +169,6 @@ void mergeSegments(const std::vector<size_t>& readLengths, std::vector<std::vect
 	size_t leftFirst = breakpoints[leftRead].getRank(leftStart);
 	size_t leftLast = breakpoints[leftRead].getRank(leftEnd);
 	assert(leftLast > leftFirst);
-	assert(segmentStarts[leftRead][leftFirst] == leftStart);
-	assert(segmentStarts[leftRead][leftLast] == leftEnd);
 	size_t rightFirst;
 	size_t rightLast;
 	if (rightFw)
@@ -179,8 +177,6 @@ void mergeSegments(const std::vector<size_t>& readLengths, std::vector<std::vect
 		assert(breakpoints[rightRead].get(rightEnd));
 		rightFirst = breakpoints[rightRead].getRank(rightStart);
 		rightLast = breakpoints[rightRead].getRank(rightEnd);
-		assert(segmentStarts[rightRead][rightFirst] == rightStart);
-		assert(segmentStarts[rightRead][rightLast] == rightEnd);
 	}
 	else
 	{
@@ -188,8 +184,6 @@ void mergeSegments(const std::vector<size_t>& readLengths, std::vector<std::vect
 		assert(breakpoints[rightRead].get(readLengths[rightRead]-rightEnd));
 		rightLast = breakpoints[rightRead].getRank(readLengths[rightRead]-rightStart);
 		rightFirst = breakpoints[rightRead].getRank(readLengths[rightRead]-rightEnd);
-		assert(segmentStarts[rightRead][rightLast] == readLengths[rightRead]-rightStart);
-		assert(segmentStarts[rightRead][rightFirst] == readLengths[rightRead]-rightEnd);
 	}
 	assert(rightLast > rightFirst);
 	assert(rightLast-rightFirst == leftLast-leftFirst);
@@ -197,44 +191,37 @@ void mergeSegments(const std::vector<size_t>& readLengths, std::vector<std::vect
 	{
 		if (rightFw)
 		{
-			assert(segmentStarts[leftRead][leftFirst+i+1] - segmentStarts[leftRead][leftFirst+i] == segmentStarts[rightRead][rightFirst+i+1] - segmentStarts[rightRead][rightFirst+i]);
 			mergeSegments(result, leftRead, leftFirst+i, rightRead, rightFirst+i, true);
 		}
 		else
 		{
-			assert(segmentStarts[leftRead][leftFirst+i+1] - segmentStarts[leftRead][leftFirst+i] == segmentStarts[rightRead][rightLast-i] - segmentStarts[rightRead][rightLast-i-1]);
 			mergeSegments(result, leftRead, leftFirst+i, rightRead, rightLast-i-1, false);
 		}
 	}
 }
 
-std::tuple<std::vector<std::vector<std::tuple<uint32_t, uint32_t, bool>>>, std::vector<std::vector<uint32_t>>> mergeSegments(const std::vector<size_t>& readLengths, const std::vector<MatchGroup>& matches, const std::vector<RankBitvector>& breakpoints)
+std::vector<std::vector<std::tuple<uint32_t, uint32_t, bool>>> mergeSegments(const std::vector<size_t>& readLengths, const std::vector<MatchGroup>& matches, const std::vector<RankBitvector>& breakpoints)
 {
 	assert(breakpoints.size() == readLengths.size());
 	std::vector<std::vector<std::tuple<uint32_t, uint32_t, bool>>> result;
-	std::vector<std::vector<uint32_t>> segmentStarts;
 	result.resize(breakpoints.size());
-	segmentStarts.resize(breakpoints.size());
 	for (size_t i = 0; i < breakpoints.size(); i++)
 	{
-		segmentStarts[i].push_back(0);
 		assert(breakpoints[i].get(0));
 		assert(breakpoints[i].get(readLengths[i]));
 		for (size_t j = 1; j < breakpoints[i].size(); j++)
 		{
 			if (!breakpoints[i].get(j)) continue;
 			result[i].emplace_back(i, result[i].size(), true);
-			segmentStarts[i].push_back(j);
 		}
 		assert(result[i].size() >= 1);
-		assert(segmentStarts[i].size() == result[i].size()+1);
 		assert(result[i].size() == breakpoints[i].getRank(readLengths[i]));
 	}
 	for (size_t groupi = 0; groupi < matches.size(); groupi++)
 	{
 		for (size_t posi = 0; posi < matches[groupi].matches.size(); posi++)
 		{
-			mergeSegments(readLengths, result, segmentStarts, breakpoints, matches[groupi].leftRead, true, matches[groupi].matches[posi].leftStart, matches[groupi].matches[posi].leftStart+matches[groupi].matches[posi].length, matches[groupi].rightRead, matches[groupi].rightFw, matches[groupi].matches[posi].rightStart, matches[groupi].matches[posi].rightStart+matches[groupi].matches[posi].length);
+			mergeSegments(readLengths, result, breakpoints, matches[groupi].leftRead, true, matches[groupi].matches[posi].leftStart, matches[groupi].matches[posi].leftStart+matches[groupi].matches[posi].length, matches[groupi].rightRead, matches[groupi].rightFw, matches[groupi].matches[posi].rightStart, matches[groupi].matches[posi].rightStart+matches[groupi].matches[posi].length);
 		}
 	}
 	for (size_t i = 0; i < result.size(); i++)
@@ -244,7 +231,7 @@ std::tuple<std::vector<std::vector<std::tuple<uint32_t, uint32_t, bool>>>, std::
 			find(result, i, j);
 		}
 	}
-	return std::make_pair(std::move(result), std::move(segmentStarts));
+	return result;
 }
 
 phmap::flat_hash_map<std::pair<uint32_t, uint32_t>, size_t> getSegmentToNode(const std::vector<std::vector<std::tuple<uint32_t, uint32_t, bool>>>& segments)
@@ -725,22 +712,29 @@ std::vector<size_t> getNodeCoverage(const std::vector<std::vector<std::tuple<uin
 	return result;
 }
 
-std::vector<size_t> getNodeLengths(const std::vector<std::vector<std::tuple<uint32_t, uint32_t, bool>>>& segments, const phmap::flat_hash_map<std::pair<uint32_t, uint32_t>, size_t>& segmentToNode, const std::vector<std::vector<uint32_t>>& segmentStarts)
+std::vector<size_t> getNodeLengths(const std::vector<std::vector<std::tuple<uint32_t, uint32_t, bool>>>& segments, const phmap::flat_hash_map<std::pair<uint32_t, uint32_t>, size_t>& segmentToNode, const std::vector<RankBitvector>& breakpoints)
 {
 	std::vector<size_t> result;
 	result.resize(segmentToNode.size(), std::numeric_limits<size_t>::max());
+	assert(segments.size() == breakpoints.size());
 	for (size_t i = 0; i < segments.size(); i++)
 	{
-		for (size_t j = 0; j < segments[i].size(); j++)
+		size_t j = 0;
+		size_t lastBreakpoint = 0;
+		assert(breakpoints[i].get(0));
+		for (size_t pos = 1; pos < breakpoints[i].size(); pos++)
 		{
+			if (!breakpoints[i].get(pos)) continue;
 			size_t node = segmentToNode.at(std::make_pair(std::get<0>(segments[i][j]), std::get<1>(segments[i][j])));
-			size_t length = segmentStarts[i][j+1] - segmentStarts[i][j];
+			size_t length = pos - lastBreakpoint;
 			if (!(result[node] == std::numeric_limits<size_t>::max() || result[node] == length))
 			{
 				std::cerr << result[node] << " " << length << std::endl;
 			}
 			assert(result[node] == std::numeric_limits<size_t>::max() || result[node] == length);
 			result[node] = length;
+			j += 1;
+			lastBreakpoint = pos;
 		}
 	}
 	return result;
@@ -758,12 +752,10 @@ void makeGraph(const std::vector<size_t>& readLengths, const std::vector<MatchGr
 		}
 	}
 	std::cerr << countBreakpoints << " breakpoints" << std::endl;
-	std::vector<std::vector<std::tuple<uint32_t, uint32_t, bool>>> segments;
-	std::vector<std::vector<uint32_t>> segmentStarts;
-	std::tie(segments, segmentStarts) = mergeSegments(readLengths, matches, breakpoints);
+	std::vector<std::vector<std::tuple<uint32_t, uint32_t, bool>>> segments = mergeSegments(readLengths, matches, breakpoints);
 	phmap::flat_hash_map<std::pair<uint32_t, uint32_t>, size_t> segmentToNode = getSegmentToNode(segments);
 	std::vector<size_t> nodeCoverage = getNodeCoverage(segments, segmentToNode);
-	std::vector<size_t> nodeLength = getNodeLengths(segments, segmentToNode, segmentStarts);
+	std::vector<size_t> nodeLength = getNodeLengths(segments, segmentToNode, breakpoints);
 	phmap::flat_hash_map<std::pair<std::pair<size_t, bool>, std::pair<size_t, bool>>, size_t> edgeCoverages = getEdgeCoverages(readLengths, segmentToNode, segments);
 	writeGraph(outputFileName, nodeCoverage, nodeLength, edgeCoverages, minCoverage, k);
 }
