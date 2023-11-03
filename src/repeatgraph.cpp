@@ -244,7 +244,7 @@ std::tuple<std::vector<std::vector<std::tuple<uint32_t, uint32_t, bool>>>, std::
 			find(result, i, j);
 		}
 	}
-	return std::make_pair(result, segmentStarts);
+	return std::make_pair(std::move(result), std::move(segmentStarts));
 }
 
 phmap::flat_hash_map<std::pair<uint32_t, uint32_t>, size_t> getSegmentToNode(const std::vector<std::vector<std::tuple<uint32_t, uint32_t, bool>>>& segments)
