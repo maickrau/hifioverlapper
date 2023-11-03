@@ -600,11 +600,17 @@ void makeGraph(const std::vector<size_t>& readLengths, const std::vector<MatchGr
 }
 
 template <typename F>
-void iterateKmerMatchPositions(const uint64_t kmer, const phmap::flat_hash_map<uint64_t, uint16_t>& firstPositions, const phmap::flat_hash_map<uint64_t, std::vector<uint16_t>>& extraPositions, F callback)
+void iterateKmerMatchPositions(const uint64_t kmer, const phmap::flat_hash_map<uint64_t, uint64_t>& firstPositions, const phmap::flat_hash_map<uint64_t, std::vector<uint16_t>>& extraPositions, F callback)
 {
 	auto found = firstPositions.find(kmer);
 	if (found == firstPositions.end()) return;
-	callback(found->second);
+	callback(found->second & 0x000000000000FFFFull);
+	if ((found->second & 0x00000000FFFF0000ull) == 0x00000000FFFF0000ull) return;
+	callback((found->second >> 16ull) & 0x000000000000FFFFull);
+	if ((found->second & 0x0000FFFF00000000ull) == 0x0000FFFF00000000ull) return;
+	callback((found->second >> 32ull) & 0x000000000000FFFFull);
+	if ((found->second & 0xFFFF000000000000ull) == 0xFFFF000000000000ull) return;
+	callback((found->second >> 48ull) & 0x000000000000FFFFull);
 	auto found2 = extraPositions.find(kmer);
 	if (found2 == extraPositions.end()) return;
 	for (auto pos : found2->second) callback(pos);
@@ -690,17 +696,36 @@ void getKmerMatches(const std::vector<TwobitString>& readSequences, MatchGroup& 
 	bool rightFw = mappingMatch.rightFw;
 	size_t left = mappingMatch.leftRead;
 	size_t right = mappingMatch.rightRead;
-	phmap::flat_hash_map<uint64_t, uint16_t> firstKmerPositionInLeft;
+	phmap::flat_hash_map<uint64_t, uint64_t> firstKmerPositionInLeft;
 	phmap::flat_hash_map<uint64_t, std::vector<uint16_t>> extraKmerPositionsInLeft;
 	iterateSyncmers(readSequences, k, 20, left, leftStart, leftEnd, true, [&firstKmerPositionInLeft, &extraKmerPositionsInLeft](const size_t kmer, const size_t pos)
 	{
 		if (firstKmerPositionInLeft.count(kmer) == 0)
 		{
-			firstKmerPositionInLeft[kmer] = pos;
+			firstKmerPositionInLeft[kmer] = 0xFFFFFFFFFFFF0000ull + pos;
 		}
 		else
 		{
-			extraKmerPositionsInLeft[kmer].push_back(pos);
+			auto& val = firstKmerPositionInLeft[kmer];
+			if ((val & 0x00000000FFFF0000ull) == 0x00000000FFFF0000ull)
+			{
+				val &= 0xFFFFFFFF0000FFFFull;
+				val += (uint64_t)pos << 16ull;
+			}
+			else if ((val & 0x0000FFFF00000000ull) == 0x0000FFFF00000000ull)
+			{
+				val &= 0xFFFF0000FFFFFFFFull;
+				val += (uint64_t)pos << 32ull;
+			}
+			else if ((val & 0xFFFF000000000000ull) == 0xFFFF000000000000ull)
+			{
+				val &= 0x0000FFFFFFFFFFFFull;
+				val += (uint64_t)pos << 48ull;
+			}
+			else
+			{
+				extraKmerPositionsInLeft[kmer].push_back(pos);
+			}
 		}
 	});
 	std::vector<std::pair<size_t, size_t>> currentMatchesPerDiagonal;
