@@ -63,7 +63,7 @@ public:
 	size_t numWindowChunks() const;
 	size_t numUniqueChunks() const;
 	template <typename F>
-	IterationInfo iterateMatches(const size_t numThreads, bool alsoSmaller, F callback) const
+	IterationInfo iterateMatches(const size_t numThreads, const size_t minCoverage, const size_t maxCoverage, bool alsoSmaller, F callback) const
 	{
 		IterationInfo result;
 		result.numberReads = numReads;
@@ -76,6 +76,8 @@ public:
 		size_t totalReadChunkMatches = 0;
 		for (size_t i = 0; i < numbers.size(); i++)
 		{
+			if (numbers[i].size() < minCoverage) continue;
+			if (numbers[i].size() > maxCoverage) continue;
 			totalReadChunkMatches += numbers[i].size();
 			maxPerChunk = std::max(maxPerChunk, numbers[i].size());
 			phmap::flat_hash_set<uint32_t> readsHere;
@@ -173,7 +175,7 @@ public:
 	{
 		size_t currentRead = 0;
 		std::unordered_set<size_t> currentMatches;
-		auto result = iterateMatches(1, true, [&currentRead, &currentMatches, callback](size_t leftread, size_t rightread, const std::vector<Match>& matches)
+		auto result = iterateMatches(1, 2, std::numeric_limits<size_t>::max(), true, [&currentRead, &currentMatches, callback](size_t leftread, size_t rightread, const std::vector<Match>& matches)
 		{
 			if (leftread != currentRead)
 			{
@@ -187,10 +189,10 @@ public:
 		return result;
 	}
 	template <typename F>
-	IterationInfo iterateMatchChains(const size_t numThreads, const std::vector<size_t>& rawReadLengths, F callback) const
+	IterationInfo iterateMatchChains(const size_t numThreads, const std::vector<size_t>& rawReadLengths, const size_t minCoverage, const size_t maxCoverage, F callback) const
 	{
 		std::atomic<size_t> totalChains = 0;
-		auto result = iterateMatches(numThreads, false, [this, &totalChains, &rawReadLengths, callback](size_t leftRead, size_t rightRead, const std::vector<Match>& matches)
+		auto result = iterateMatches(numThreads, minCoverage, maxCoverage, false, [this, &totalChains, &rawReadLengths, callback](size_t leftRead, size_t rightRead, const std::vector<Match>& matches)
 		{
 			std::vector<std::tuple<size_t, size_t, size_t, size_t>> currentFwMatches;
 			std::vector<std::tuple<size_t, size_t, size_t, size_t>> currentBwMatches;
@@ -264,7 +266,7 @@ public:
 	template <typename F>
 	IterationInfo iterateMatchNames(const size_t numThreads, const std::vector<std::string>& names, const std::vector<size_t>& rawReadLengths, F callback) const
 	{
-		return iterateMatchChains(numThreads, rawReadLengths, [&names, &rawReadLengths, callback](size_t left, size_t leftStart, size_t leftEnd, bool leftFw, size_t right, size_t rightStart, size_t rightEnd, bool rightFw)
+		return iterateMatchChains(numThreads, rawReadLengths, 2, std::numeric_limits<size_t>::max(), [&names, &rawReadLengths, callback](size_t left, size_t leftStart, size_t leftEnd, bool leftFw, size_t right, size_t rightStart, size_t rightEnd, bool rightFw)
 		{
 			callback(names[left], rawReadLengths[left], leftStart, leftEnd, leftFw, names[right], rawReadLengths[right], rightStart, rightEnd, rightFw);
 		});
