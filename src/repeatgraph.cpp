@@ -619,7 +619,7 @@ void iterateKmerMatchPositions(const uint64_t kmer, const phmap::flat_hash_map<u
 template <typename F1, typename F2>
 void iterateSyncmers(const std::vector<TwobitString>& readSequences, const size_t k, const size_t w, const size_t maxLen, F1 callback, F2 getchar)
 {
-	static std::vector<std::tuple<size_t, uint64_t>> smerOrder;
+	thread_local std::vector<std::tuple<size_t, uint64_t>> smerOrder;
 	assert(w < k);
 	assert(w >= 3);
 	const uint64_t mask = (1ull << (2ull*k)) - 1;
@@ -776,10 +776,10 @@ void removeKmer(phmap::flat_hash_map<uint64_t, uint64_t>& firstKmerPositionInLef
 
 void getKmerMatches(const std::vector<TwobitString>& readSequences, MatchGroup& mappingMatch, const size_t k, const size_t w)
 {
-	static size_t lastLeftRead = std::numeric_limits<size_t>::max();
-	static size_t lastLeftStart = std::numeric_limits<size_t>::max();
-	static size_t lastLeftEnd = std::numeric_limits<size_t>::max();
-	static std::vector<std::pair<uint64_t, size_t>> leftSyncmers;
+	thread_local size_t lastLeftRead = std::numeric_limits<size_t>::max();
+	thread_local size_t lastLeftStart = std::numeric_limits<size_t>::max();
+	thread_local size_t lastLeftEnd = std::numeric_limits<size_t>::max();
+	thread_local std::vector<std::pair<uint64_t, size_t>> leftSyncmers;
 	assert(mappingMatch.leftEnd - mappingMatch.leftStart < std::numeric_limits<uint16_t>::max());
 	assert(mappingMatch.rightEnd - mappingMatch.rightStart < std::numeric_limits<uint16_t>::max());
 	assert(k <= 31);
@@ -884,6 +884,43 @@ void getKmerMatches(const std::vector<TwobitString>& readSequences, MatchGroup& 
 	}
 }
 
+void addKmerMatches(const size_t numThreads, const std::vector<TwobitString>& readSequences, std::vector<MatchGroup>& matches, const size_t graphk, const size_t graphd)
+{
+	std::atomic<size_t> kmerMatchCount;
+	kmerMatchCount = 0;
+	size_t nextIndex = 0;
+	std::mutex indexMutex;
+	std::vector<std::thread> threads;
+	for (size_t i = 0; i < numThreads; i++)
+	{
+		threads.emplace_back([&matches, &readSequences, graphk, graphd, &nextIndex, &indexMutex, &kmerMatchCount](){
+			while (true)
+			{
+				size_t startIndex = 0;
+				size_t endIndex = 0;
+				{
+					std::lock_guard<std::mutex> lock { indexMutex };
+					startIndex = nextIndex;
+					nextIndex += 1;
+					while (nextIndex < matches.size() && matches[nextIndex].leftRead == matches[nextIndex-1].leftRead && matches[nextIndex].leftStart == matches[nextIndex-1].leftStart) nextIndex += 1;
+					endIndex = nextIndex;
+				}
+				if (startIndex >= matches.size()) break;
+				for (size_t i = startIndex; i < endIndex; i++)
+				{
+					getKmerMatches(readSequences, matches[i], graphk, graphd);
+					kmerMatchCount += matches[i].matches.size();
+				}
+			}
+		});
+	}
+	for (size_t i = 0; i < threads.size(); i++)
+	{
+		threads[i].join();
+	}
+	std::cerr << kmerMatchCount << " kmer matches" << std::endl;
+}
+
 int main(int argc, char** argv)
 {
 	size_t numThreads = std::stoi(argv[1]);
@@ -905,10 +942,15 @@ int main(int argc, char** argv)
 	for (auto file : readFiles)
 	{
 		std::mutex indexMutex;
-		storage.iterateReadsFromFile(file, numThreads, false, [&matchIndex, &indexMutex, &readSequences](size_t readName, const std::string& sequence)
+		std::mutex sequenceMutex;
+		storage.iterateReadsFromFile(file, numThreads, false, [&matchIndex, &indexMutex, &sequenceMutex, &readSequences](size_t readName, const std::string& sequence)
 		{
 			matchIndex.addMatchesFromRead(readName, indexMutex, sequence);
-			readSequences.emplace_back(sequence);
+			{
+				std::lock_guard<std::mutex> lock { sequenceMutex };
+				while (readSequences.size() <= readName) readSequences.emplace_back();
+				readSequences[readName] = sequence;
+			}
 		});
 	}
 	std::cerr << readSequences.size() << " reads" << std::endl;
@@ -979,18 +1021,6 @@ int main(int argc, char** argv)
 	std::cerr << result.totalMatches << " window matches" << std::endl;
 	std::cerr << result.maxPerChunk << " max windowchunk size" << std::endl;
 	std::cerr << matches.size() << " mapping matches" << std::endl;
-	size_t kmerMatchCount = 0;
-	for (auto& t : matches)
-	{
-		getKmerMatches(readSequences, t, graphk, graphd);
-		kmerMatchCount += t.matches.size();
-		for (auto pos : t.matches)
-		{
-			assert(pos.length <= t.leftEnd - t.leftStart);
-			assert(pos.length <= t.rightEnd - t.rightStart);
-			// std::cout << readNames[std::get<0>(match)] << "\t" << readKmerLengths[std::get<0>(match)] << "\t" << std::get<1>(match) << "\t" << std::get<2>(match) << "\t" << readNames[std::get<3>(match)] << "\t" << readKmerLengths[std::get<3>(match)] << "\t" << std::get<4>(match) << "\t" << std::get<5>(match) << "\t" << (std::get<6>(match) ? "fw" : "bw") << std::endl;
-		}
-	}
-	std::cerr << kmerMatchCount << " kmer matches" << std::endl;
+	addKmerMatches(numThreads, readSequences, matches, graphk, graphd);
 	makeGraph(readKmerLengths, matches, minCoverage, "graph.gfa", graphk);
 }
