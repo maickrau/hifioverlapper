@@ -793,7 +793,7 @@ void getKmerMatches(const std::vector<TwobitString>& readSequences, MatchGroup& 
 	size_t right = mappingMatch.rightRead;
 	phmap::flat_hash_map<uint64_t, uint64_t> firstKmerPositionInLeft;
 	phmap::flat_hash_map<uint64_t, std::vector<uint16_t>> extraKmerPositionsInLeft;
-	if (left != lastLeftRead || leftStart != lastLeftStart || leftEnd != lastLeftEnd)
+	if (left != lastLeftRead || leftStart != lastLeftStart || leftEnd > lastLeftEnd)
 	{
 		leftSyncmers.clear();
 		iterateSyncmers(readSequences, k, 20, left, leftStart, leftEnd, true, [&leftSyncmers](const size_t kmer, const size_t pos)
@@ -819,12 +819,12 @@ void getKmerMatches(const std::vector<TwobitString>& readSequences, MatchGroup& 
 	iterateSyncmers(readSequences, k, 20, right, rightStart, rightEnd, rightFw, [&firstKmerPositionInLeft, &extraKmerPositionsInLeft, &currentMatchesPerDiagonal, diagonalCount, zeroDiagonal, rightFw, left, right, leftStart, rightStart, leftEnd, rightEnd, w, k, &mappingMatch, &leftTrailingIndex, &leftLeadingIndex, &leftSyncmers](const size_t kmer, const size_t rightPos)
 	{
 		size_t interpolatedLeftPos = (double)(rightPos) / (double)(rightEnd-rightStart) * (double)(leftEnd-leftStart);
-		while (leftLeadingIndex < leftSyncmers.size() && leftSyncmers[leftLeadingIndex].second <= interpolatedLeftPos + w)
+		while (leftLeadingIndex < leftSyncmers.size() && leftSyncmers[leftLeadingIndex].second <= interpolatedLeftPos + w && leftSyncmers[leftLeadingIndex].second < leftEnd)
 		{
 			addKmer(firstKmerPositionInLeft, extraKmerPositionsInLeft, leftSyncmers[leftLeadingIndex].first, leftSyncmers[leftLeadingIndex].second);
 			leftLeadingIndex += 1;
 		}
-		while (leftTrailingIndex < leftSyncmers.size() && leftSyncmers[leftTrailingIndex].second + w < interpolatedLeftPos)
+		while (leftTrailingIndex < leftSyncmers.size() && leftSyncmers[leftTrailingIndex].second + w < interpolatedLeftPos && leftSyncmers[leftLeadingIndex].second < leftEnd)
 		{
 			removeKmer(firstKmerPositionInLeft, extraKmerPositionsInLeft, leftSyncmers[leftTrailingIndex].first, leftSyncmers[leftTrailingIndex].second);
 			leftTrailingIndex += 1;
@@ -968,6 +968,8 @@ int main(int argc, char** argv)
 		if (left.leftRead < right.leftRead) return true;
 		if (left.leftRead > right.leftRead) return false;
 		if (left.leftStart < right.leftStart) return true;
+		if (left.leftStart > right.leftStart) return false;
+		if (left.leftEnd > right.leftEnd) return true;
 		return false;
 	});
 	std::cerr << result.totalReadChunkMatches << " read-windowchunk matches (except unique)" << std::endl;
