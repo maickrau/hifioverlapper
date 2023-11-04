@@ -170,23 +170,22 @@ std::vector<uint64_t> mergeSegments(const std::vector<size_t>& readLengths, cons
 	return result;
 }
 
-phmap::flat_hash_map<uint64_t, size_t> getSegmentToNode(const std::vector<uint64_t>& segments)
+RankBitvector getSegmentToNode(const std::vector<uint64_t>& segments, const size_t minCoverage)
 {
-	size_t nextIndex = 0;
-	phmap::flat_hash_map<uint64_t, size_t> result;
+	RankBitvector result;
+	result.resize(segments.size());
 	for (size_t i = 0; i < segments.size(); i++)
 	{
 		assert((segments[i] & maskUint64_t) < segments.size());
 		if ((segments[i] & maskUint64_t) != i) continue;
 		assert(segments[i] == i);
-		assert(result.count(i) == 0);
-		result[i] = nextIndex;
-		nextIndex += 1;
+		result.set(i, true);
 	}
+	result.buildRanks();
 	return result;
 }
 
-phmap::flat_hash_map<std::pair<std::pair<size_t, bool>, std::pair<size_t, bool>>, size_t> getEdgeCoverages(const std::vector<size_t>& readLengths, const phmap::flat_hash_map<uint64_t, size_t>& segmentToNode, const std::vector<uint64_t>& segments, const std::vector<RankBitvector>& breakpoints, const size_t minCoverage, const std::vector<size_t>& nodeCoverage)
+phmap::flat_hash_map<std::pair<std::pair<size_t, bool>, std::pair<size_t, bool>>, size_t> getEdgeCoverages(const std::vector<size_t>& readLengths, const RankBitvector& segmentToNode, const std::vector<uint64_t>& segments, const std::vector<RankBitvector>& breakpoints, const size_t minCoverage, const std::vector<size_t>& nodeCoverage)
 {
 	phmap::flat_hash_map<std::pair<std::pair<size_t, bool>, std::pair<size_t, bool>>, size_t> edgeCoverage;
 	size_t i = 0;
@@ -197,7 +196,7 @@ phmap::flat_hash_map<std::pair<std::pair<size_t, bool>, std::pair<size_t, bool>>
 		{
 			if (!breakpoints[readi].get(readpos)) continue;
 			std::pair<size_t, bool> edgeFrom;
-			edgeFrom.first = segmentToNode.at(segments[i-1] & maskUint64_t);
+			edgeFrom.first = segmentToNode.getRank(segments[i-1] & maskUint64_t);
 			edgeFrom.second = (segments[i-1] & firstBitUint64_t) == 0;
 			if (nodeCoverage[edgeFrom.first] < minCoverage)
 			{
@@ -205,7 +204,7 @@ phmap::flat_hash_map<std::pair<std::pair<size_t, bool>, std::pair<size_t, bool>>
 				continue;
 			}
 			std::pair<size_t, bool> edgeTo;
-			edgeTo.first = segmentToNode.at(segments[i] & maskUint64_t);
+			edgeTo.first = segmentToNode.getRank(segments[i] & maskUint64_t);
 			if (nodeCoverage[edgeTo.first] < minCoverage)
 			{
 				i += 1;
@@ -534,13 +533,13 @@ std::vector<RankBitvector> extendBreakpoints(const std::vector<size_t>& readLeng
 	return breakpoints;
 }
 
-std::vector<size_t> getNodeCoverage(const std::vector<uint64_t>& segments, const phmap::flat_hash_map<uint64_t, size_t>& segmentToNode)
+std::vector<size_t> getNodeCoverage(const std::vector<uint64_t>& segments, const RankBitvector& segmentToNode, const size_t countNodes)
 {
 	std::vector<size_t> result;
-	result.resize(segmentToNode.size(), 0);
+	result.resize(countNodes, 0);
 	for (size_t i = 0; i < segments.size(); i++)
 	{
-		uint64_t node = segmentToNode.at(segments[i] & maskUint64_t);
+		uint64_t node = segmentToNode.getRank(segments[i] & maskUint64_t);
 		assert(node < result.size());
 		result[node] += 1;
 	}
@@ -551,10 +550,10 @@ std::vector<size_t> getNodeCoverage(const std::vector<uint64_t>& segments, const
 	return result;
 }
 
-std::vector<size_t> getNodeLengths(const std::vector<uint64_t>& segments, const phmap::flat_hash_map<uint64_t, size_t>& segmentToNode, const std::vector<RankBitvector>& breakpoints)
+std::vector<size_t> getNodeLengths(const std::vector<uint64_t>& segments, const RankBitvector& segmentToNode, const std::vector<RankBitvector>& breakpoints, const size_t countNodes)
 {
 	std::vector<size_t> result;
-	result.resize(segmentToNode.size(), std::numeric_limits<size_t>::max());
+	result.resize(countNodes, std::numeric_limits<size_t>::max());
 	size_t i = 0;
 	for (size_t readi = 0; readi < breakpoints.size(); readi++)
 	{
@@ -563,7 +562,7 @@ std::vector<size_t> getNodeLengths(const std::vector<uint64_t>& segments, const 
 		for (size_t pos = 1; pos < breakpoints[readi].size(); pos++)
 		{
 			if (!breakpoints[readi].get(pos)) continue;
-			const size_t node = segmentToNode.at(segments[i] & maskUint64_t);
+			const size_t node = segmentToNode.getRank(segments[i] & maskUint64_t);
 			const size_t length = pos - lastBreakpoint;
 			assert(node < result.size());
 			assert(length >= 1);
@@ -600,10 +599,11 @@ void makeGraph(const std::vector<size_t>& readLengths, const std::vector<MatchGr
 	std::cerr << countBreakpoints << " breakpoints" << std::endl;
 	std::vector<uint64_t> segments = mergeSegments(readLengths, matches, breakpoints, countBreakpoints);
 	std::cerr << segments.size() << " segments" << std::endl;
-	phmap::flat_hash_map<uint64_t, size_t> segmentToNode = getSegmentToNode(segments);
-	std::cerr << segmentToNode.size() << " nodes pre coverage filter" << std::endl;
-	std::vector<size_t> nodeCoverage = getNodeCoverage(segments, segmentToNode);
-	std::vector<size_t> nodeLength = getNodeLengths(segments, segmentToNode, breakpoints);
+	RankBitvector segmentToNode = getSegmentToNode(segments, minCoverage);
+	size_t countNodes = (segmentToNode.getRank(segmentToNode.size()-1) + (segmentToNode.get(segmentToNode.size()-1) ? 1 : 0));
+	std::cerr << countNodes << " nodes pre coverage filter" << std::endl;
+	std::vector<size_t> nodeCoverage = getNodeCoverage(segments, segmentToNode, countNodes);
+	std::vector<size_t> nodeLength = getNodeLengths(segments, segmentToNode, breakpoints, countNodes);
 	phmap::flat_hash_map<std::pair<std::pair<size_t, bool>, std::pair<size_t, bool>>, size_t> edgeCoverages = getEdgeCoverages(readLengths, segmentToNode, segments, breakpoints, minCoverage, nodeCoverage);
 	std::cerr << edgeCoverages.size() << " edges pre coverage filter" << std::endl;
 	writeGraph(outputFileName, nodeCoverage, nodeLength, edgeCoverages, minCoverage, k);
