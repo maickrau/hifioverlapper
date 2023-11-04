@@ -31,7 +31,7 @@ public:
 	std::vector<Match> matches;
 };
 
-void writeGraph(std::string outputFileName, const std::vector<size_t>& nodeCoverage, const std::vector<size_t>& nodeLength, const phmap::flat_hash_map<std::pair<std::pair<size_t, bool>, std::pair<size_t, bool>>, size_t>& edgeCoverage, const size_t minCoverage, const size_t k)
+void writeGraph(std::string outputFileName, const std::vector<size_t>& nodeCoverage, const std::vector<size_t>& nodeLength, const MostlySparse2DHashmap<uint8_t, size_t>& edgeCoverage, const size_t minCoverage, const size_t k)
 {
 	std::ofstream graph { outputFileName };
 	size_t countNodes = 0;
@@ -42,11 +42,22 @@ void writeGraph(std::string outputFileName, const std::vector<size_t>& nodeCover
 		graph << "S\tnode_" << i << "\t*\tLN:i:" << (nodeLength[i]+k-1) << "\tll:f:" << nodeCoverage[i] << "\tFC:i:" << nodeCoverage[i] * (nodeLength[i]+k-1) << std::endl;
 		countNodes += 1;
 	}
-	for (auto pair : edgeCoverage)
+	for (size_t i = 0; i < edgeCoverage.size(); i++)
 	{
-		if (pair.second < minCoverage) continue;
-		graph << "L\tnode_" << pair.first.first.first << "\t" << (pair.first.first.second ? "+" : "-") << "\tnode_" << pair.first.second.first << "\t" << (pair.first.second.second ? "+" : "-") << "\t" << (k-1) << "M\tec:i:" << pair.second << std::endl;
-		countEdges += 1;
+		auto fw = std::make_pair(i, true);
+		for (auto pair : edgeCoverage.getValues(fw))
+		{
+			if (pair.second < minCoverage) continue;
+			graph << "L\tnode_" << i << "\t+\tnode_" << pair.first.first << "\t" << (pair.first.second ? "+" : "-") << "\t" << (k-1) << "M\tec:i:" << pair.second << std::endl;
+			countEdges += 1;
+		}
+		auto bw = std::make_pair(i, false);
+		for (auto pair : edgeCoverage.getValues(bw))
+		{
+			if (pair.second < minCoverage) continue;
+			graph << "L\tnode_" << i << "\t-\tnode_" << pair.first.first << "\t" << (pair.first.second ? "+" : "-") << "\t" << (k-1) << "M\tec:i:" << pair.second << std::endl;
+			countEdges += 1;
+		}
 	}
 	std::cerr << countNodes << " graph nodes" << std::endl;
 	std::cerr << countEdges << " graph edges" << std::endl;
@@ -185,9 +196,10 @@ RankBitvector getSegmentToNode(const std::vector<uint64_t>& segments, const size
 	return result;
 }
 
-phmap::flat_hash_map<std::pair<std::pair<size_t, bool>, std::pair<size_t, bool>>, size_t> getEdgeCoverages(const std::vector<size_t>& readLengths, const RankBitvector& segmentToNode, const std::vector<uint64_t>& segments, const std::vector<RankBitvector>& breakpoints, const size_t minCoverage, const std::vector<size_t>& nodeCoverage)
+MostlySparse2DHashmap<uint8_t, size_t> getEdgeCoverages(const std::vector<size_t>& readLengths, const RankBitvector& segmentToNode, const std::vector<uint64_t>& segments, const std::vector<RankBitvector>& breakpoints, const size_t minCoverage, const std::vector<size_t>& nodeCoverage, const size_t countNodes)
 {
-	phmap::flat_hash_map<std::pair<std::pair<size_t, bool>, std::pair<size_t, bool>>, size_t> edgeCoverage;
+	MostlySparse2DHashmap<uint8_t, size_t> edgeCoverage;
+	edgeCoverage.resize(countNodes);
 	size_t i = 0;
 	for (size_t readi = 0; readi < breakpoints.size(); readi++)
 	{
@@ -212,7 +224,11 @@ phmap::flat_hash_map<std::pair<std::pair<size_t, bool>, std::pair<size_t, bool>>
 			}
 			edgeTo.second = (segments[i] & firstBitUint64_t) == 0;
 			auto key = canon(edgeFrom, edgeTo);
-			edgeCoverage[key] += 1;
+			assert(key.first.first < edgeCoverage.size());
+			assert(key.second.first < edgeCoverage.size());
+			size_t coverage = 0;
+			if (edgeCoverage.hasValue(key.first, key.second)) coverage = edgeCoverage.get(key.first, key.second);
+			edgeCoverage.set(key.first, key.second, coverage+1);
 			i += 1;
 		}
 	}
@@ -604,7 +620,7 @@ void makeGraph(const std::vector<size_t>& readLengths, const std::vector<MatchGr
 	std::cerr << countNodes << " nodes pre coverage filter" << std::endl;
 	std::vector<size_t> nodeCoverage = getNodeCoverage(segments, segmentToNode, countNodes);
 	std::vector<size_t> nodeLength = getNodeLengths(segments, segmentToNode, breakpoints, countNodes);
-	phmap::flat_hash_map<std::pair<std::pair<size_t, bool>, std::pair<size_t, bool>>, size_t> edgeCoverages = getEdgeCoverages(readLengths, segmentToNode, segments, breakpoints, minCoverage, nodeCoverage);
+	MostlySparse2DHashmap<uint8_t, size_t> edgeCoverages = getEdgeCoverages(readLengths, segmentToNode, segments, breakpoints, minCoverage, nodeCoverage, countNodes);
 	std::cerr << edgeCoverages.size() << " edges pre coverage filter" << std::endl;
 	writeGraph(outputFileName, nodeCoverage, nodeLength, edgeCoverages, minCoverage, k);
 }
