@@ -186,7 +186,7 @@ phmap::flat_hash_map<uint64_t, size_t> getSegmentToNode(const std::vector<uint64
 	return result;
 }
 
-phmap::flat_hash_map<std::pair<std::pair<size_t, bool>, std::pair<size_t, bool>>, size_t> getEdgeCoverages(const std::vector<size_t>& readLengths, const phmap::flat_hash_map<uint64_t, size_t>& segmentToNode, const std::vector<uint64_t>& segments, const std::vector<RankBitvector>& breakpoints)
+phmap::flat_hash_map<std::pair<std::pair<size_t, bool>, std::pair<size_t, bool>>, size_t> getEdgeCoverages(const std::vector<size_t>& readLengths, const phmap::flat_hash_map<uint64_t, size_t>& segmentToNode, const std::vector<uint64_t>& segments, const std::vector<RankBitvector>& breakpoints, const size_t minCoverage, const std::vector<size_t>& nodeCoverage)
 {
 	phmap::flat_hash_map<std::pair<std::pair<size_t, bool>, std::pair<size_t, bool>>, size_t> edgeCoverage;
 	size_t i = 0;
@@ -199,8 +199,18 @@ phmap::flat_hash_map<std::pair<std::pair<size_t, bool>, std::pair<size_t, bool>>
 			std::pair<size_t, bool> edgeFrom;
 			edgeFrom.first = segmentToNode.at(segments[i-1] & maskUint64_t);
 			edgeFrom.second = (segments[i-1] & firstBitUint64_t) == 0;
+			if (nodeCoverage[edgeFrom.first] < minCoverage)
+			{
+				i += 1;
+				continue;
+			}
 			std::pair<size_t, bool> edgeTo;
 			edgeTo.first = segmentToNode.at(segments[i] & maskUint64_t);
+			if (nodeCoverage[edgeTo.first] < minCoverage)
+			{
+				i += 1;
+				continue;
+			}
 			edgeTo.second = (segments[i] & firstBitUint64_t) == 0;
 			auto key = canon(edgeFrom, edgeTo);
 			edgeCoverage[key] += 1;
@@ -594,7 +604,7 @@ void makeGraph(const std::vector<size_t>& readLengths, const std::vector<MatchGr
 	std::cerr << segmentToNode.size() << " nodes pre coverage filter" << std::endl;
 	std::vector<size_t> nodeCoverage = getNodeCoverage(segments, segmentToNode);
 	std::vector<size_t> nodeLength = getNodeLengths(segments, segmentToNode, breakpoints);
-	phmap::flat_hash_map<std::pair<std::pair<size_t, bool>, std::pair<size_t, bool>>, size_t> edgeCoverages = getEdgeCoverages(readLengths, segmentToNode, segments, breakpoints);
+	phmap::flat_hash_map<std::pair<std::pair<size_t, bool>, std::pair<size_t, bool>>, size_t> edgeCoverages = getEdgeCoverages(readLengths, segmentToNode, segments, breakpoints, minCoverage, nodeCoverage);
 	std::cerr << edgeCoverages.size() << " edges pre coverage filter" << std::endl;
 	writeGraph(outputFileName, nodeCoverage, nodeLength, edgeCoverages, minCoverage, k);
 }
