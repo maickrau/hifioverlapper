@@ -24,7 +24,7 @@ $(shell mkdir -p lib)
 
 lib: $(LIBDIR)/hifioverlapper.a
 
-$(LIBDIR)/hifioverlapper.a: $(OBJ) $(DEPS) MBG/lib/mbg.a
+$(LIBDIR)/hifioverlapper.a: $(OBJ) $(DEPS)
 	ar rvs $@ $(OBJ) $^
 
 $(BINDIR)/matchchains: $(OBJ) $(ODIR)/matchchains.o MBG/lib/mbg.a
