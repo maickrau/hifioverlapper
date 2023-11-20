@@ -4,6 +4,7 @@ CPPFLAGS=-Wall -Wextra -std=c++17 -O3 -g -Izstr/src -Iparallel-hashmap/parallel_
 ODIR=obj
 BINDIR=bin
 SRCDIR=src
+LIBDIR=lib
 
 LIBS=`pkg-config --libs zlib`
 
@@ -19,6 +20,12 @@ VERSION := Branch $(shell git rev-parse --abbrev-ref HEAD) commit $(shell git re
 
 $(shell mkdir -p bin)
 $(shell mkdir -p obj)
+$(shell mkdir -p lib)
+
+lib: $(LIBDIR)/hifioverlapper.a
+
+$(LIBDIR)/hifioverlapper.a: $(OBJ) $(DEPS) MBG/lib/mbg.a
+	ar rvs $@ $(OBJ) $^
 
 $(BINDIR)/matchchains: $(OBJ) $(ODIR)/matchchains.o MBG/lib/mbg.a
 	$(GPP) -o $@ $^ $(LINKFLAGS)
@@ -43,4 +50,5 @@ all: $(BINDIR)/matchchains $(BINDIR)/unitigcorrection
 clean:
 	rm -f $(ODIR)/*
 	rm -f $(BINDIR)/*
+	rm -f $(LIBDIR)/*
 	$(MAKE) -C MBG clean
