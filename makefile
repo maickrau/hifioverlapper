@@ -22,6 +22,8 @@ $(shell mkdir -p bin)
 $(shell mkdir -p obj)
 $(shell mkdir -p lib)
 
+all: $(BINDIR)/matchchains lib
+
 lib: $(LIBDIR)/hifioverlapper.a
 
 $(LIBDIR)/hifioverlapper.a: $(OBJ) $(DEPS)
@@ -33,19 +35,11 @@ $(BINDIR)/matchchains: $(OBJ) $(ODIR)/matchchains.o MBG/lib/mbg.a
 $(ODIR)/matchchains.o: $(SRCDIR)/matchchains.cpp $(DEPS) $(OBJ)
 	$(GPP) -c -o $@ $< $(CPPFLAGS) -DVERSION="\"$(VERSION)\""
 
-$(BINDIR)/unitigcorrection: $(OBJ) $(ODIR)/unitigcorrection.o MBG/lib/mbg.a
-	$(GPP) -o $@ $^ $(LINKFLAGS)
-
-$(ODIR)/unitigcorrection.o: $(SRCDIR)/unitigcorrection.cpp $(DEPS) $(OBJ)
-	$(GPP) -c -o $@ $< $(CPPFLAGS) -DVERSION="\"$(VERSION)\""
-
 $(ODIR)/%.o: $(SRCDIR)/%.cpp $(DEPS)
 	$(GPP) -c -o $@ $< $(CPPFLAGS)
 
 MBG/lib/mbg.a:
 	$(MAKE) -C MBG lib
-
-all: $(BINDIR)/matchchains $(BINDIR)/unitigcorrection
 
 clean:
 	rm -f $(ODIR)/*
