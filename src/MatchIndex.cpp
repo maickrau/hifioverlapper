@@ -105,10 +105,10 @@ void MatchIndex::addMatchesFromReadOneWay(uint32_t readKey, std::mutex& indexMut
 	partIterator.iteratePartsOfRead("", readSequence, [this, &indexMutex, readKey, fw](const ReadInfo& read, const SequenceCharType& seq, const SequenceLengthType& poses, const std::string& raw)
 	{
 		if (seq.size() < numWindows * windowSize + k) return;
-		phmap::flat_hash_set<std::tuple<uint64_t, uint32_t, uint32_t>> hashesHere;
+		phmap::flat_hash_map<std::pair<uint32_t, uint32_t>, uint64_t> minHashPerPosition;
 		size_t rawReadLength = raw.size();
 		size_t compressedReadLength = seq.size();
-		iterateWindowchunks(seq, k, numWindows, windowSize, [this, &hashesHere, &poses, rawReadLength, compressedReadLength, fw](const std::vector<uint64_t>& hashes, const size_t startPos, const size_t endPos)
+		iterateWindowchunks(seq, k, numWindows, windowSize, [this, &minHashPerPosition, &poses, rawReadLength, compressedReadLength, fw](const std::vector<uint64_t>& hashes, const size_t startPos, const size_t endPos)
 		{
 			uint64_t totalhash = 0;
 			for (auto hash : hashes)
@@ -131,12 +131,16 @@ void MatchIndex::addMatchesFromReadOneWay(uint32_t readKey, std::mutex& indexMut
 				realStartPos += 0x80000000;
 				realEndPos += 0x80000000;
 			}
-			hashesHere.emplace(totalhash, realStartPos, realEndPos);
+			auto found = minHashPerPosition.find(std::make_pair(realStartPos, realEndPos));
+			if (found == minHashPerPosition.end() || found->second > totalhash)
+			{
+				minHashPerPosition[std::make_pair(realStartPos, realEndPos)] = totalhash;
+			}
 		});
 		std::lock_guard<std::mutex> guard { indexMutex };
-		for (auto t : hashesHere)
+		for (auto t : minHashPerPosition)
 		{
-			addMatch(std::get<0>(t), ((__uint128_t)readKey << (__uint128_t)64) + ((__uint128_t)std::get<1>(t) << (__uint128_t)32) + (__uint128_t)std::get<2>(t));
+			addMatch(t.second, ((__uint128_t)readKey << (__uint128_t)64) + ((__uint128_t)t.first.first << (__uint128_t)32) + (__uint128_t)t.first.second);
 		}
 	});
 }
