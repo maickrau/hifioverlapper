@@ -17,6 +17,17 @@ int main(int argc, char** argv)
 		readFiles.emplace_back(argv[i]);
 	}
 	MatchIndex matchIndex { k, numWindows, windowSize };
+	for (auto file : readFiles)
+	{
+		ReadStorage storage;
+		std::mutex indexMutex;
+		storage.iterateReadsFromFile(file, numThreads, false, [&matchIndex, &indexMutex](size_t readName, const std::string& sequence)
+		{
+			matchIndex.countSeenHashes(indexMutex, sequence);
+		});
+	}
+	size_t numWindowChunks = matchIndex.numSeenChunks();
+	matchIndex.clearSeenAndInitializeBuckets();
 	ReadStorage storage;
 	for (auto file : readFiles)
 	{
@@ -26,8 +37,7 @@ int main(int argc, char** argv)
 			matchIndex.addMatchesFromRead(readName, indexMutex, sequence);
 		});
 	}
-	size_t numWindowChunks = matchIndex.numWindowChunks();
-	size_t numUniqueChunks = matchIndex.numUniqueChunks();
+	size_t numGoodChunks = matchIndex.numWindowChunks();
 	matchIndex.clearConstructionVariablesAndCompact();
 	std::mutex printMutex;
 	auto result = matchIndex.iterateMatchNames(numThreads, 2, std::numeric_limits<size_t>::max(), 10000, storage.getNames(), storage.getRawReadLengths(), [&printMutex](const std::string& left, const size_t leftlen, const size_t leftstart, const size_t leftend, const bool leftFw, const std::string& right, const size_t rightlen, const size_t rightstart, const size_t rightend, const bool rightFw)
@@ -38,7 +48,7 @@ int main(int argc, char** argv)
 	std::cerr << result.numberReads << " reads" << std::endl;
 	std::cerr << numWindowChunks << " distinct windowchunks" << std::endl;
 	std::cerr << result.totalReadChunkMatches << " read-windowchunk matches (except unique)" << std::endl;
-	std::cerr << numUniqueChunks << " windowchunks have only one read" << std::endl;
+	std::cerr << numGoodChunks << " windowchunks with >= 2 reads" << std::endl;
 	std::cerr << result.readsWithMatch << " reads with a match" << std::endl;
 	std::cerr << result.readPairMatches << " read-read matches" << std::endl;
 	std::cerr << result.readChainMatches << " chain matches" << std::endl;
