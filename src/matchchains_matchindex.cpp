@@ -60,7 +60,7 @@ int main(int argc, char** argv)
 				file.read((char*)&hash, 4);
 				file.read((char*)&startPos, 4);
 				file.read((char*)&endPos, 4);
-				countHashesPerBucket[hash] += 1;
+				if (read >= firstIndexedRead && read < firstNonindexedRead) countHashesPerBucket[hash] += 1;
 			}
 		}
 		matchIndex.initBuckets(countHashes, countHashesPerBucket);
