@@ -19,7 +19,7 @@ public:
 	ReadIdContainer() = default;
 	const std::vector<ReadMatchposStorage>& getMultiNumbers() const;
 	void addNumber(uint32_t key, __uint128_t value);
-	void initializeBuckets(size_t numBuckets);
+	void initializeBuckets(size_t numBuckets, const std::vector<size_t>& countHashesPerBucket);
 	size_t bucketsSize() const;
 private:
 	std::vector<ReadMatchposStorage> numbers;
@@ -56,7 +56,7 @@ class MatchIndex
 {
 public:
 	MatchIndex(size_t k, size_t numWindows, size_t windowSize);
-	void initBuckets(size_t numBuckets);
+	void initBuckets(size_t numBuckets, const std::vector<size_t>& countHashesPerBucket);
 	void addHashes(uint32_t read, const std::vector<std::tuple<uint32_t, uint32_t, uint32_t>>& hashes);
 	template <typename F>
 	void iterateWindowChunksFromRead(const std::string& readSequence, F callback) const

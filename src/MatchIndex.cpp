@@ -9,9 +9,14 @@ void ReadIdContainer::addNumber(uint32_t key, __uint128_t value)
 	numbers[key].emplace_back(value);
 }
 
-void ReadIdContainer::initializeBuckets(size_t numBuckets)
+void ReadIdContainer::initializeBuckets(size_t numBuckets, const std::vector<size_t>& countHashesPerBucket)
 {
+	assert(numBuckets == countHashesPerBucket.size());
 	numbers.resize(numBuckets);
+	for (size_t i = 0; i < countHashesPerBucket.size(); i++)
+	{
+		numbers[i].reserve(countHashesPerBucket[i]);
+	}
 }
 
 const std::vector<ReadMatchposStorage>& ReadIdContainer::getMultiNumbers() const
@@ -50,7 +55,7 @@ void MatchIndex::addHashes(uint32_t read, const std::vector<std::tuple<uint32_t,
 	}
 }
 
-void MatchIndex::initBuckets(size_t numBuckets)
+void MatchIndex::initBuckets(size_t numBuckets, const std::vector<size_t>& countHashesPerBucket)
 {
-	idContainer.initializeBuckets(numBuckets);
+	idContainer.initializeBuckets(numBuckets, countHashesPerBucket);
 }

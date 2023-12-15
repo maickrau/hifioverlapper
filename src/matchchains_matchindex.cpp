@@ -38,7 +38,33 @@ int main(int argc, char** argv)
 	std::cerr << readLengths.size() << " reads" << std::endl;
 	std::cerr << countHashes << " indexed hashes" << std::endl;
 	MatchIndex matchIndex { 0, 0, 0 };
-	matchIndex.initBuckets(countHashes);
+	{
+		std::vector<size_t> countHashesPerBucket;
+		countHashesPerBucket.resize(countHashes, 0);
+		std::ifstream file { indexPrefix + ".positions", std::ios::binary };
+		while (file.good())
+		{
+			uint32_t read = 0;
+			uint32_t count = 0;
+			file.read((char*)&read, 4);
+			file.read((char*)&count, 4);
+			if (!file.good()) break;
+			assert(count >= 1);
+			assert(read < readLengths.size());
+			std::vector<std::tuple<uint32_t, uint32_t, uint32_t>> hashes;
+			for (size_t i = 0; i < count; i++)
+			{
+				uint32_t hash;
+				uint32_t startPos;
+				uint32_t endPos;
+				file.read((char*)&hash, 4);
+				file.read((char*)&startPos, 4);
+				file.read((char*)&endPos, 4);
+				countHashesPerBucket[hash] += 1;
+			}
+		}
+		matchIndex.initBuckets(countHashes, countHashesPerBucket);
+	}
 	{
 		std::ifstream file { indexPrefix + ".positions", std::ios::binary };
 		while (file.good())
