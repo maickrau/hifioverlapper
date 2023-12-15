@@ -8,15 +8,22 @@
 
 int main(int argc, char** argv)
 {
-	size_t numThreads = std::stoi(argv[1]);
+	std::string indexPrefix = argv[1];
+	size_t indexSplitThis = std::stoull(argv[2]);
+	size_t indexSplitTotalCount = std::stoull(argv[3]);
 	std::vector<size_t> readLengths;
 	std::vector<std::string> readNames;
 	size_t countHashes = 0;
+	size_t firstIndexedRead;
+	size_t firstNonindexedRead;
 	{
-		std::ifstream file { "index.metadata.index", std::ios::binary };
+		std::ifstream file { indexPrefix + ".metadata", std::ios::binary };
 		size_t readCount = 0;
 		file.read((char*)&countHashes, sizeof(size_t));
 		file.read((char*)&readCount, sizeof(size_t));
+		firstIndexedRead = (double)indexSplitThis/(double)indexSplitTotalCount * readCount;
+		firstNonindexedRead = (double)(indexSplitThis+1)/(double)indexSplitTotalCount * readCount;
+		if (indexSplitThis == indexSplitTotalCount-1) firstNonindexedRead = readCount;
 		readLengths.resize(readCount);
 		readNames.resize(readCount);
 		for (size_t i = 0; i < readLengths.size(); i++)
@@ -33,7 +40,7 @@ int main(int argc, char** argv)
 	MatchIndex matchIndex { 0, 0, 0 };
 	matchIndex.initBuckets(countHashes);
 	{
-		std::ifstream file { "index.positions.index", std::ios::binary };
+		std::ifstream file { indexPrefix + ".positions", std::ios::binary };
 		while (file.good())
 		{
 			uint32_t read = 0;
@@ -54,13 +61,13 @@ int main(int argc, char** argv)
 				file.read((char*)&endPos, 4);
 				hashes.emplace_back(hash, startPos, endPos);
 			}
-			matchIndex.addHashes(read, hashes);
+			if (read >= firstIndexedRead && read < firstNonindexedRead) matchIndex.addHashes(read, hashes);
 		}
 	}
 	size_t countMatches = 0;
 	{
 		std::mutex printMutex;
-		std::ifstream file { "index.positions.index", std::ios::binary };
+		std::ifstream file { indexPrefix + ".positions", std::ios::binary };
 		while (file.good())
 		{
 			uint32_t read = 0;
