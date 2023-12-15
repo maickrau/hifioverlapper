@@ -22,7 +22,7 @@ $(shell mkdir -p bin)
 $(shell mkdir -p obj)
 $(shell mkdir -p lib)
 
-all: $(BINDIR)/matchchains $(BINDIR)/matchchains_batched lib
+all: $(BINDIR)/matchchains $(BINDIR)/matchchains_batched $(BINDIR)/matchchains_index $(BINDIR)/matchchains_matchindex lib
 
 lib: $(LIBDIR)/hifioverlapper.a
 
@@ -39,6 +39,18 @@ $(BINDIR)/matchchains_batched: $(OBJ) $(ODIR)/matchchains_batched.o MBG/lib/mbg.
 	$(GPP) -o $@ $^ $(LINKFLAGS)
 
 $(ODIR)/matchchains_batched.o: $(SRCDIR)/matchchains_batched.cpp $(DEPS) $(OBJ)
+	$(GPP) -c -o $@ $< $(CPPFLAGS) -DVERSION="\"$(VERSION)\""
+
+$(BINDIR)/matchchains_index: $(OBJ) $(ODIR)/matchchains_index.o MBG/lib/mbg.a
+	$(GPP) -o $@ $^ $(LINKFLAGS)
+
+$(ODIR)/matchchains_index.o: $(SRCDIR)/matchchains_index.cpp $(DEPS) $(OBJ)
+	$(GPP) -c -o $@ $< $(CPPFLAGS) -DVERSION="\"$(VERSION)\""
+
+$(BINDIR)/matchchains_matchindex: $(OBJ) $(ODIR)/matchchains_matchindex.o MBG/lib/mbg.a
+	$(GPP) -o $@ $^ $(LINKFLAGS)
+
+$(ODIR)/matchchains_matchindex.o: $(SRCDIR)/matchchains_matchindex.cpp $(DEPS) $(OBJ)
 	$(GPP) -c -o $@ $< $(CPPFLAGS) -DVERSION="\"$(VERSION)\""
 
 $(ODIR)/%.o: $(SRCDIR)/%.cpp $(DEPS)
