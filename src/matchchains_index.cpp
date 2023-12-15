@@ -23,18 +23,22 @@ int main(int argc, char** argv)
 	size_t numReads = 0;
 	size_t numHashes = 0;
 	size_t numIndexedHashes = 0;
-	std::ofstream tmpPositionsFile { indexPrefix + ".tmp1", std::ofstream::binary };
-	std::ofstream tmpHashesFile { indexPrefix + ".tmp2", std::ofstream::binary };
+	std::ofstream tmpPositionsFile { indexPrefix + ".tmp", std::ofstream::binary };
+	std::vector<std::ofstream> tmpHashesFiles;
+	for (size_t i = 0; i < numHashPasses; i++)
+	{
+		tmpHashesFiles.emplace_back(indexPrefix + ".tmp" + std::to_string(i), std::ofstream::binary);
+	}
 	MatchIndex matchIndex { k, numWindows, windowSize };
 	ReadStorage storage;
 	for (auto file : readFiles)
 	{
 		std::mutex indexMutex;
-		storage.iterateReadsFromFile(file, numThreads, false, [&matchIndex, &indexMutex, &tmpPositionsFile, &tmpHashesFile, &numReads, &numHashes, &numIndexedHashes](size_t readName, const std::string& sequence)
+		storage.iterateReadsFromFile(file, numThreads, false, [&matchIndex, &indexMutex, &tmpPositionsFile, &tmpHashesFiles, numHashPasses, &numReads, &numHashes, &numIndexedHashes](size_t readName, const std::string& sequence)
 		{
 			std::vector<std::tuple<uint64_t, uint32_t, uint32_t>> hashes;
 			phmap::flat_hash_set<uint64_t> hashesHere;
-			matchIndex.iterateWindowChunksFromRead(sequence, [&tmpPositionsFile, &tmpHashesFile, &numReads, &numHashes, &numIndexedHashes, &hashesHere, &hashes](uint32_t startPos, uint32_t endPos, uint64_t hash)
+			matchIndex.iterateWindowChunksFromRead(sequence, [&tmpPositionsFile, &tmpHashesFiles, numHashPasses, &numReads, &numHashes, &numIndexedHashes, &hashesHere, &hashes](uint32_t startPos, uint32_t endPos, uint64_t hash)
 			{
 				hashesHere.emplace(hash);
 				hashes.emplace_back(hash, startPos, endPos);
@@ -49,7 +53,8 @@ int main(int argc, char** argv)
 			tmpPositionsFile.write((char*)&count, 4);
 			for (auto t : hashes)
 			{
-				tmpHashesFile.write((char*)&std::get<0>(t), 8);
+				tmpHashesFiles[std::get<0>(t) % numHashPasses].write((char*)&std::get<0>(t), 8);
+				tmpPositionsFile.write((char*)&std::get<0>(t), 8);
 				tmpPositionsFile.write((char*)&std::get<1>(t), 4);
 				tmpPositionsFile.write((char*)&std::get<2>(t), 4);
 			}
@@ -58,21 +63,21 @@ int main(int argc, char** argv)
 	const std::vector<size_t>& readLengths = storage.getRawReadLengths();
 	const std::vector<std::string>& readNames = storage.getNames();
 	tmpPositionsFile.close();
-	tmpHashesFile.close();
+	for (size_t i = 0; i < tmpHashesFiles.size(); i++) tmpHashesFiles[i].close();
 	std::cerr << numReads << " reads" << std::endl;
 	std::cerr << numHashes << " total positions" << std::endl;
 	phmap::flat_hash_map<uint64_t, uint32_t> hashToIndex;
 	size_t totalDistinctHashes = 0;
 	for (size_t i = 0; i < numHashPasses; i++)
 	{
-		std::ifstream hashPass { indexPrefix + ".tmp2", std::ios::binary };
+		std::ifstream hashPass { indexPrefix + ".tmp" + std::to_string(i), std::ios::binary };
 		phmap::flat_hash_set<uint64_t> seenOnce;
 		while (hashPass.good())
 		{
 			uint64_t hash;
 			hashPass.read((char*)&hash, 8);
 			if (!hashPass.good()) break;
-			if (hash % numHashPasses != i) continue;
+			assert(hash % numHashPasses == i);
 			if (seenOnce.count(hash) == 1)
 			{
 				if (hashToIndex.count(hash) == 0)
@@ -87,6 +92,10 @@ int main(int argc, char** argv)
 			}
 		}
 		totalDistinctHashes += seenOnce.size();
+	}
+	for (size_t i = 0; i < numHashPasses; i++)
+	{
+		std::filesystem::remove(indexPrefix + ".tmp" + std::to_string(i));
 	}
 	std::cerr << totalDistinctHashes << " distinct hashes" << std::endl;
 	std::cerr << hashToIndex.size() << " indexed hashes" << std::endl;
@@ -106,8 +115,7 @@ int main(int argc, char** argv)
 		}
 	}
 	std::ofstream indexFile { indexPrefix + ".positions", std::ofstream::binary };
-	std::ifstream redoPositions { indexPrefix + ".tmp1", std::ifstream::binary };
-	std::ifstream redoHashes { indexPrefix + ".tmp2", std::ifstream::binary };
+	std::ifstream redoPositions { indexPrefix + ".tmp", std::ifstream::binary };
 	while (redoPositions.good())
 	{
 		uint32_t read;
@@ -120,8 +128,7 @@ int main(int argc, char** argv)
 		{
 			uint64_t hash;
 			uint32_t startPos, endPos;
-			assert(redoHashes.good());
-			redoHashes.read((char*)&hash, 8);
+			redoPositions.read((char*)&hash, 8);
 			redoPositions.read((char*)&startPos, 4);
 			redoPositions.read((char*)&endPos, 4);
 			if (hashToIndex.count(hash) == 0) continue;
@@ -140,8 +147,6 @@ int main(int argc, char** argv)
 		}
 	}
 	redoPositions.close();
-	redoHashes.close();
-	std::filesystem::remove(indexPrefix + ".tmp1");
-	std::filesystem::remove(indexPrefix + ".tmp2");
+	std::filesystem::remove(indexPrefix + ".tmp");
 	std::cerr << numIndexedHashes << " indexed positions" << std::endl;
 }
