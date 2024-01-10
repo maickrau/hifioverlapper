@@ -4,22 +4,50 @@
 #include <iostream>
 #include <vector>
 #include <string>
+#include <cxxopts.hpp>
 #include "ReadStorage.h"
 #include "MatchIndex.h"
 
 int main(int argc, char** argv)
 {
-	size_t numThreads = std::stoi(argv[1]);
-	size_t k = std::stoull(argv[2]);
-	size_t numWindows = std::stoull(argv[3]);
-	size_t windowSize = std::stoull(argv[4]);
-	size_t numHashPasses = std::stoull(argv[5]);
-	std::string indexPrefix = argv[6];
-	std::vector<std::string> readFiles;
-	for (size_t i = 7; i < argc; i++)
+	cxxopts::Options options("matchchains_index", "Build an index file for read matching");
+	options.add_options()
+		("t", "Number of threads", cxxopts::value<int>()->default_value("1"))
+		("k", "k-mer size", cxxopts::value<int>()->default_value("201"))
+		("w", "window size", cxxopts::value<int>()->default_value("500"))
+		("n", "window count", cxxopts::value<int>()->default_value("4"))
+		("tmpfilecount", "count of temporary files used in building the index", cxxopts::value<int>()->default_value("16"))
+		("o,output", "prefix of output index", cxxopts::value<std::string>())
+		("h,help", "print help");
+	auto result = options.parse(argc, argv);
+	if (result.count("h") == 1)
 	{
-		readFiles.emplace_back(argv[i]);
+		std::cerr << options.help();
+		std::cerr << "Usage: matchchains_index -o indexprefix readfile1.fa readfile2.fa" << std::endl;
+		std::exit(0);
 	}
+	if (result.count("o") == 0)
+	{
+		std::cerr << "Output prefix -o is required" << std::endl;
+		std::exit(1);
+	}
+	size_t numThreads = result["t"].as<int>();
+	size_t k = result["k"].as<int>();
+	size_t numWindows = result["n"].as<int>();
+	size_t windowSize = result["w"].as<int>();
+	size_t numHashPasses = result["tmpfilecount"].as<int>();
+	std::string indexPrefix = result["o"].as<std::string>();
+	std::vector<std::string> readFiles = result.unmatched();
+	if (readFiles.size() == 0)
+	{
+		std::cerr << "At least one input read file is required" << std::endl;
+		std::exit(1);
+	}
+	std::cerr << "indexing with k=" << k << " n=" << numWindows << " w=" << windowSize << std::endl;
+	std::cerr << "other parameters t=" << numThreads << " tmpfilecount=" << numHashPasses << " o=" << indexPrefix << std::endl;
+	std::cerr << "indexing from files:";
+	for (auto file : readFiles) std::cerr << " " << file;
+	std::cerr << std::endl;
 	size_t numReads = 0;
 	size_t numHashes = 0;
 	size_t numIndexedHashes = 0;
@@ -101,6 +129,9 @@ int main(int argc, char** argv)
 	std::cerr << hashToIndex.size() << " indexed hashes" << std::endl;
 	{
 		std::ofstream indexMetadata { indexPrefix + ".metadata", std::ofstream::binary };
+		indexMetadata.write((char*)&k, sizeof(size_t));
+		indexMetadata.write((char*)&numWindows, sizeof(size_t));
+		indexMetadata.write((char*)&windowSize, sizeof(size_t));
 		size_t countHashes = hashToIndex.size();
 		size_t countReads = readLengths.size();
 		indexMetadata.write((char*)&countHashes, sizeof(size_t));

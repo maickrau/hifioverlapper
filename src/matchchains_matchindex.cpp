@@ -3,14 +3,34 @@
 #include <iostream>
 #include <vector>
 #include <string>
+#include <cxxopts.hpp>
 #include "ReadStorage.h"
 #include "MatchIndex.h"
 
 int main(int argc, char** argv)
 {
-	std::string indexPrefix = argv[1];
-	size_t indexSplitThis = std::stoull(argv[2]);
-	size_t indexSplitTotalCount = std::stoull(argv[3]);
+	cxxopts::Options options("matchchains_matchindex", "Match reads based on a prebuilt index");
+	options.add_options()
+		("i,input", "prefix of input index", cxxopts::value<std::string>())
+		("batchcount", "number of batches", cxxopts::value<int>()->default_value("1"))
+		("batchindex", "index of this batch in batches", cxxopts::value<int>()->default_value("0"))
+		("h,help", "print help");
+	auto result = options.parse(argc, argv);
+	if (result.count("h") == 1)
+	{
+		std::cerr << options.help();
+		std::cerr << "Usage: matchchains_index -i indexprefix > matches.txt" << std::endl;
+		std::exit(0);
+	}
+	if (result.count("i") == 0)
+	{
+		std::cerr << "Input prefix -i is required" << std::endl;
+		std::exit(1);
+	}
+	std::string indexPrefix = result["i"].as<std::string>();
+	size_t indexSplitThis = result["batchindex"].as<int>();
+	size_t indexSplitTotalCount = result["batchcount"].as<int>();
+	std::cerr << "Reading from index " << indexPrefix << " batch " << indexSplitThis << "/" << indexSplitTotalCount << std::endl;
 	std::vector<size_t> readLengths;
 	std::vector<std::string> readNames;
 	size_t countHashes = 0;
@@ -18,6 +38,11 @@ int main(int argc, char** argv)
 	size_t firstNonindexedRead;
 	{
 		std::ifstream file { indexPrefix + ".metadata", std::ios::binary };
+		size_t k, numWindows, windowSize;
+		file.read((char*)&k, sizeof(size_t));
+		file.read((char*)&numWindows, sizeof(size_t));
+		file.read((char*)&windowSize, sizeof(size_t));
+		std::cerr << "index k=" << k << " n=" << numWindows << " w=" << windowSize << std::endl;
 		size_t readCount = 0;
 		file.read((char*)&countHashes, sizeof(size_t));
 		file.read((char*)&readCount, sizeof(size_t));
