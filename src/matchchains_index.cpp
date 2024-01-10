@@ -18,6 +18,7 @@ int main(int argc, char** argv)
 		("n", "window count", cxxopts::value<int>()->default_value("4"))
 		("tmpfilecount", "count of temporary files used in building the index", cxxopts::value<int>()->default_value("16"))
 		("o,output", "prefix of output index", cxxopts::value<std::string>())
+		("hpc", "homopolymer compress reads before indexing", cxxopts::value<bool>()->default_value("false"))
 		("h,help", "print help");
 	auto result = options.parse(argc, argv);
 	if (result.count("h") == 1)
@@ -36,6 +37,7 @@ int main(int argc, char** argv)
 	size_t numWindows = result["n"].as<int>();
 	size_t windowSize = result["w"].as<int>();
 	size_t numHashPasses = result["tmpfilecount"].as<int>();
+	bool hpc = result["hpc"].as<bool>();
 	std::string indexPrefix = result["o"].as<std::string>();
 	std::vector<std::string> readFiles = result.unmatched();
 	if (readFiles.size() == 0)
@@ -43,7 +45,7 @@ int main(int argc, char** argv)
 		std::cerr << "At least one input read file is required" << std::endl;
 		std::exit(1);
 	}
-	std::cerr << "indexing with k=" << k << " n=" << numWindows << " w=" << windowSize << std::endl;
+	std::cerr << "indexing with k=" << k << " n=" << numWindows << " w=" << windowSize << " hpc=" << (hpc ? 1 : 0) << std::endl;
 	std::cerr << "other parameters t=" << numThreads << " tmpfilecount=" << numHashPasses << " o=" << indexPrefix << std::endl;
 	std::cerr << "indexing from files:";
 	for (auto file : readFiles) std::cerr << " " << file;
@@ -59,20 +61,32 @@ int main(int argc, char** argv)
 	}
 	MatchIndex matchIndex { k, numWindows, windowSize };
 	ReadStorage storage;
+	std::vector<size_t> readLengths;
 	for (auto file : readFiles)
 	{
 		std::mutex indexMutex;
-		storage.iterateReadsFromFile(file, numThreads, false, [&matchIndex, &indexMutex, &tmpPositionsFile, &tmpHashesFiles, numHashPasses, &numReads, &numHashes, &numIndexedHashes](size_t readName, const std::string& sequence)
+		storage.iterateReadsFromFile(file, numThreads, false, [&matchIndex, &indexMutex, &tmpPositionsFile, &tmpHashesFiles, numHashPasses, &numReads, &numHashes, &numIndexedHashes, hpc, &readLengths](size_t readName, const std::string& sequence)
 		{
 			std::vector<std::tuple<uint64_t, uint32_t, uint32_t>> hashes;
 			phmap::flat_hash_set<uint64_t> hashesHere;
-			matchIndex.iterateWindowChunksFromRead(sequence, [&tmpPositionsFile, &tmpHashesFiles, numHashPasses, &numReads, &numHashes, &numIndexedHashes, &hashesHere, &hashes](uint32_t startPos, uint32_t endPos, uint64_t hash)
+			matchIndex.iterateWindowChunksFromRead(sequence, hpc, [&tmpPositionsFile, &tmpHashesFiles, numHashPasses, &numReads, &numHashes, &numIndexedHashes, &hashesHere, &hashes](uint32_t startPos, uint32_t endPos, uint64_t hash)
 			{
 				hashesHere.emplace(hash);
 				hashes.emplace_back(hash, startPos, endPos);
 			});
 			if (hashes.size() == 0) return;
 			std::lock_guard<std::mutex> lock { indexMutex };
+			size_t readLength = sequence.size();
+			if (hpc)
+			{
+				readLength = 1;
+				for (size_t i = 1; i < sequence.size(); i++)
+				{
+					if (sequence[i] != sequence[i-1]) readLength += 1;
+				}
+			}
+			while (readLengths.size() <= readName) readLengths.emplace_back();
+			readLengths[readName] = readLength;
 			numReads += 1;
 			numHashes += hashes.size();
 			uint32_t read = readName;
@@ -88,7 +102,6 @@ int main(int argc, char** argv)
 			}
 		});
 	}
-	const std::vector<size_t>& readLengths = storage.getRawReadLengths();
 	const std::vector<std::string>& readNames = storage.getNames();
 	tmpPositionsFile.close();
 	for (size_t i = 0; i < tmpHashesFiles.size(); i++) tmpHashesFiles[i].close();
@@ -129,6 +142,8 @@ int main(int argc, char** argv)
 	std::cerr << hashToIndex.size() << " indexed hashes" << std::endl;
 	{
 		std::ofstream indexMetadata { indexPrefix + ".metadata", std::ofstream::binary };
+		unsigned char ishpc = (hpc ? 1 : 0);
+		indexMetadata.write((char*)&ishpc, 1);
 		indexMetadata.write((char*)&k, sizeof(size_t));
 		indexMetadata.write((char*)&numWindows, sizeof(size_t));
 		indexMetadata.write((char*)&windowSize, sizeof(size_t));

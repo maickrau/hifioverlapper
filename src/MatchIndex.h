@@ -59,11 +59,11 @@ public:
 	void initBuckets(size_t numBuckets, const std::vector<size_t>& countHashesPerBucket);
 	void addHashes(uint32_t read, const std::vector<std::tuple<uint32_t, uint32_t, uint32_t>>& hashes);
 	template <typename F>
-	void iterateWindowChunksFromRead(const std::string& readSequence, F callback) const
+	void iterateWindowChunksFromRead(const std::string& readSequence, bool hpc, F callback) const
 	{
-		iterateWindowChunksFromReadOneWay(readSequence, callback);
+		iterateWindowChunksFromReadOneWay(readSequence, hpc, callback);
 		auto rev = revCompRaw(readSequence);
-		iterateWindowChunksFromReadOneWay(rev, [callback](uint32_t startPos, uint32_t endPos, uint64_t hash)
+		iterateWindowChunksFromReadOneWay(rev, hpc, [callback](uint32_t startPos, uint32_t endPos, uint64_t hash)
 		{
 			startPos += 0x80000000;
 			endPos += 0x80000000;
@@ -71,9 +71,17 @@ public:
 		});
 	}
 	template <typename F>
-	void iterateWindowChunksFromReadOneWay(const std::string& readSequence, F callback) const
+	void iterateWindowChunksFromReadOneWay(const std::string& readSequence, bool hpc, F callback) const
 	{
-		ErrorMasking errorMasking = ErrorMasking::Microsatellite;
+		ErrorMasking errorMasking;
+		if (hpc)
+		{
+			errorMasking = ErrorMasking::CollapseMicrosatellite;
+		}
+		else
+		{
+			errorMasking = ErrorMasking::Microsatellite;
+		}
 		std::vector<std::string> readFiles { };
 		ReadpartIterator partIterator { 31, 1, errorMasking, 1, readFiles, false, "" };
 		partIterator.iteratePartsOfRead("", readSequence, [this, callback](const ReadInfo& read, const SequenceCharType& seq, const SequenceLengthType& poses, const std::string& raw)
