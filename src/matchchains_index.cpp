@@ -12,11 +12,11 @@ int main(int argc, char** argv)
 {
 	cxxopts::Options options("matchchains_index", "Build an index file for read matching");
 	options.add_options()
-		("t", "Number of threads", cxxopts::value<int>()->default_value("1"))
-		("k", "k-mer size", cxxopts::value<int>()->default_value("201"))
-		("w", "window size", cxxopts::value<int>()->default_value("500"))
-		("n", "window count", cxxopts::value<int>()->default_value("4"))
-		("tmpfilecount", "count of temporary files used in building the index", cxxopts::value<int>()->default_value("16"))
+		("t", "Number of threads", cxxopts::value<size_t>()->default_value("1"))
+		("k", "k-mer size", cxxopts::value<size_t>()->default_value("201"))
+		("w", "window size", cxxopts::value<size_t>()->default_value("500"))
+		("n", "window count", cxxopts::value<size_t>()->default_value("4"))
+		("tmp-file-count", "count of temporary files used in building the index", cxxopts::value<size_t>()->default_value("16"))
 		("o,output", "prefix of output index", cxxopts::value<std::string>())
 		("hpc", "homopolymer compress reads before indexing", cxxopts::value<bool>()->default_value("false"))
 		("h,help", "print help");
@@ -32,11 +32,11 @@ int main(int argc, char** argv)
 		std::cerr << "Output prefix -o is required" << std::endl;
 		std::exit(1);
 	}
-	size_t numThreads = result["t"].as<int>();
-	size_t k = result["k"].as<int>();
-	size_t numWindows = result["n"].as<int>();
-	size_t windowSize = result["w"].as<int>();
-	size_t numHashPasses = result["tmpfilecount"].as<int>();
+	size_t numThreads = result["t"].as<size_t>();
+	size_t k = result["k"].as<size_t>();
+	size_t numWindows = result["n"].as<size_t>();
+	size_t windowSize = result["w"].as<size_t>();
+	size_t numHashPasses = result["tmp-file-count"].as<size_t>();
 	bool hpc = result["hpc"].as<bool>();
 	std::string indexPrefix = result["o"].as<std::string>();
 	std::vector<std::string> readFiles = result.unmatched();
@@ -46,7 +46,7 @@ int main(int argc, char** argv)
 		std::exit(1);
 	}
 	std::cerr << "indexing with k=" << k << " n=" << numWindows << " w=" << windowSize << " hpc=" << (hpc ? 1 : 0) << std::endl;
-	std::cerr << "other parameters t=" << numThreads << " tmpfilecount=" << numHashPasses << " o=" << indexPrefix << std::endl;
+	std::cerr << "other parameters t=" << numThreads << " tmp-file-count=" << numHashPasses << " o=" << indexPrefix << std::endl;
 	std::cerr << "indexing from files:";
 	for (auto file : readFiles) std::cerr << " " << file;
 	std::cerr << std::endl;

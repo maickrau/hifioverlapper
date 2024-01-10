@@ -12,8 +12,9 @@ int main(int argc, char** argv)
 	cxxopts::Options options("matchchains_matchindex", "Match reads based on a prebuilt index");
 	options.add_options()
 		("i,input", "prefix of input index", cxxopts::value<std::string>())
-		("batchcount", "number of batches", cxxopts::value<int>()->default_value("1"))
-		("batchindex", "index of this batch in batches", cxxopts::value<int>()->default_value("0"))
+		("batchcount", "number of batches", cxxopts::value<size_t>()->default_value("1"))
+		("batchindex", "index of this batch in batches", cxxopts::value<size_t>()->default_value("0"))
+		("min-match-length", "minimum length of match", cxxopts::value<size_t>()->default_value("0"))
 		("h,help", "print help");
 	auto result = options.parse(argc, argv);
 	if (result.count("h") == 1)
@@ -28,8 +29,9 @@ int main(int argc, char** argv)
 		std::exit(1);
 	}
 	std::string indexPrefix = result["i"].as<std::string>();
-	size_t indexSplitThis = result["batchindex"].as<int>();
-	size_t indexSplitTotalCount = result["batchcount"].as<int>();
+	size_t minMatchLength = result["min-match-length"].as<size_t>();
+	size_t indexSplitThis = result["batchindex"].as<size_t>();
+	size_t indexSplitTotalCount = result["batchcount"].as<size_t>();
 	std::cerr << "Reading from index " << indexPrefix << " batch " << indexSplitThis << "/" << indexSplitTotalCount << std::endl;
 	std::vector<size_t> readLengths;
 	std::vector<std::string> readNames;
@@ -141,8 +143,10 @@ int main(int argc, char** argv)
 				hashes.emplace_back(hash, startPos, endPos);
 			}
 			assert(file.good());
-			matchIndex.iterateMatchNamesOneRead(read, 10000, readNames, readLengths, hashes, [&printMutex, &countMatches](const std::string& left, const size_t leftlen, const size_t leftstart, const size_t leftend, const bool leftFw, const std::string& right, const size_t rightlen, const size_t rightstart, const size_t rightend, const bool rightFw)
+			matchIndex.iterateMatchNamesOneRead(read, 10000, readNames, readLengths, hashes, [&printMutex, &countMatches, minMatchLength](const std::string& left, const size_t leftlen, const size_t leftstart, const size_t leftend, const bool leftFw, const std::string& right, const size_t rightlen, const size_t rightstart, const size_t rightend, const bool rightFw)
 			{
+				if (leftend - leftstart < minMatchLength) return;
+				if (rightend - rightstart < minMatchLength) return;
 				std::lock_guard<std::mutex> lock { printMutex };
 				std::cout << left << "\t" << leftlen << "\t" << leftstart << "\t" << leftend << "\t" << (leftFw ? "fw" : "bw") << "\t" << right << "\t" << rightlen << "\t" << rightstart << "\t" << rightend << "\t" << (rightFw ? "fw" : "bw") << std::endl;
 				countMatches += 1;
