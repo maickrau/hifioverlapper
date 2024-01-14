@@ -155,6 +155,15 @@ public:
 		}
 	}
 	template <typename F>
+	void iterateChunks(F callback) const
+	{
+		const auto& numbers = idContainer.getMultiNumbers();
+		for (size_t i = 0; i < numbers.size(); i++)
+		{
+			callback(i, numbers[i]);
+		}
+	}
+	template <typename F>
 	IterationInfo iterateMatches(const size_t numThreads, const size_t minCoverage, const size_t maxCoverage, const size_t maxLengthDifference, bool alsoSmaller, F callback) const
 	{
 		IterationInfo result;
