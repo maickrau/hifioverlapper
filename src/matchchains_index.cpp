@@ -19,6 +19,7 @@ int main(int argc, char** argv)
 		("tmp-file-count", "count of temporary files used in building the index", cxxopts::value<size_t>()->default_value("16"))
 		("o,output", "prefix of output index", cxxopts::value<std::string>())
 		("hpc", "homopolymer compress reads before indexing", cxxopts::value<bool>()->default_value("false"))
+		("keep-sequence-name-tags", "Keep tags in input sequence names")
 		("h,help", "print help");
 	auto result = options.parse(argc, argv);
 	if (result.count("h") == 1)
@@ -39,6 +40,8 @@ int main(int argc, char** argv)
 	size_t numHashPasses = result["tmp-file-count"].as<size_t>();
 	bool hpc = result["hpc"].as<bool>();
 	std::string indexPrefix = result["o"].as<std::string>();
+	bool keepSequenceNameTags = false;
+	if (result.count("keep-sequence-name-tags")) keepSequenceNameTags = true;
 	std::vector<std::string> readFiles = result.unmatched();
 	if (readFiles.size() == 0)
 	{
@@ -153,11 +156,13 @@ int main(int argc, char** argv)
 		indexMetadata.write((char*)&countReads, sizeof(size_t));
 		for (size_t read = 0; read < countReads; read++)
 		{
-			size_t nameLength = readNames[read].size();
+			std::string name = readNames[read];
+			if (!keepSequenceNameTags) name = name.substr(0, name.find_first_of(" \t\r\n"));
+			size_t nameLength = name.size();
 			size_t readLength = readLengths[read];
 			indexMetadata.write((char*)&readLength, sizeof(size_t));
 			indexMetadata.write((char*)&nameLength, sizeof(size_t));
-			indexMetadata.write((char*)readNames[read].data(), nameLength);
+			indexMetadata.write((char*)name.data(), nameLength);
 		}
 	}
 	std::ofstream indexFile { indexPrefix + ".positions", std::ofstream::binary };
