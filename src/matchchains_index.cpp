@@ -16,6 +16,7 @@ int main(int argc, char** argv)
 		("k", "k-mer size", cxxopts::value<size_t>()->default_value("201"))
 		("w", "window size", cxxopts::value<size_t>()->default_value("500"))
 		("n", "window count", cxxopts::value<size_t>()->default_value("4"))
+		("max-coverage", "discard indexed items with coverage higher than this", cxxopts::value<size_t>())
 		("tmp-file-count", "count of temporary files used in building the index", cxxopts::value<size_t>()->default_value("16"))
 		("o,output", "prefix of output index", cxxopts::value<std::string>())
 		("hpc", "homopolymer compress reads before indexing", cxxopts::value<bool>()->default_value("false"))
@@ -38,6 +39,8 @@ int main(int argc, char** argv)
 	size_t numWindows = result["n"].as<size_t>();
 	size_t windowSize = result["w"].as<size_t>();
 	size_t numHashPasses = result["tmp-file-count"].as<size_t>();
+	size_t maxCoverage = std::numeric_limits<size_t>::max();
+	if (result.count("max-coverage") == 1) maxCoverage = result["max-coverage"].as<size_t>();
 	bool hpc = result["hpc"].as<bool>();
 	std::string indexPrefix = result["o"].as<std::string>();
 	bool keepSequenceNameTags = false;
@@ -48,7 +51,7 @@ int main(int argc, char** argv)
 		std::cerr << "At least one input read file is required" << std::endl;
 		std::exit(1);
 	}
-	std::cerr << "indexing with k=" << k << " n=" << numWindows << " w=" << windowSize << " hpc=" << (hpc ? 1 : 0) << std::endl;
+	std::cerr << "indexing with k=" << k << " n=" << numWindows << " w=" << windowSize << " hpc=" << (hpc ? 1 : 0) << " maxcoverage=" << maxCoverage << std::endl;
 	std::cerr << "other parameters t=" << numThreads << " tmp-file-count=" << numHashPasses << " o=" << indexPrefix << std::endl;
 	std::cerr << "indexing from files:";
 	for (auto file : readFiles) std::cerr << " " << file;
@@ -111,6 +114,7 @@ int main(int argc, char** argv)
 	std::cerr << numReads << " reads" << std::endl;
 	std::cerr << numHashes << " total positions" << std::endl;
 	phmap::flat_hash_map<uint64_t, uint32_t> hashToIndex;
+	std::vector<size_t> indexCoverage;
 	size_t totalDistinctHashes = 0;
 	for (size_t i = 0; i < numHashPasses; i++)
 	{
@@ -128,6 +132,12 @@ int main(int argc, char** argv)
 				{
 					size_t index = hashToIndex.size();
 					hashToIndex[hash] = index;
+					indexCoverage.emplace_back(2);
+				}
+				else
+				{
+					size_t index = hashToIndex.at(hash);
+					indexCoverage[index] += 1;
 				}
 			}
 			else
@@ -141,6 +151,24 @@ int main(int argc, char** argv)
 	{
 		std::filesystem::remove(indexPrefix + ".tmp" + std::to_string(i));
 	}
+	size_t countAboveThreshold = 0;
+	size_t maxHashCoverage = 0;
+	size_t maxIndexedCoverage = 0;
+	for (size_t i = 0; i < indexCoverage.size(); i++)
+	{
+		if (indexCoverage[i] > maxCoverage)
+		{
+			countAboveThreshold += 1;
+		}
+		else
+		{
+			maxIndexedCoverage = std::max(maxIndexedCoverage, indexCoverage[i]);
+		}
+		maxHashCoverage = std::max(maxHashCoverage, indexCoverage[i]);
+	}
+	std::cerr << countAboveThreshold << " hashes discarded due to being above max coverage" << std::endl;
+	std::cerr << maxHashCoverage << " max found coverage" << std::endl;
+	std::cerr << maxIndexedCoverage << " max indexed coverage" << std::endl;
 	std::cerr << totalDistinctHashes << " distinct hashes" << std::endl;
 	std::cerr << hashToIndex.size() << " indexed hashes" << std::endl;
 	{
@@ -150,6 +178,7 @@ int main(int argc, char** argv)
 		indexMetadata.write((char*)&k, sizeof(size_t));
 		indexMetadata.write((char*)&numWindows, sizeof(size_t));
 		indexMetadata.write((char*)&windowSize, sizeof(size_t));
+		indexMetadata.write((char*)&maxCoverage, sizeof(size_t));
 		size_t countHashes = hashToIndex.size();
 		size_t countReads = readLengths.size();
 		indexMetadata.write((char*)&countHashes, sizeof(size_t));
@@ -183,7 +212,9 @@ int main(int argc, char** argv)
 			redoPositions.read((char*)&startPos, 4);
 			redoPositions.read((char*)&endPos, 4);
 			if (hashToIndex.count(hash) == 0) continue;
-			hashes.emplace_back(hashToIndex.at(hash), startPos, endPos);
+			size_t index = hashToIndex.at(hash);
+			if (indexCoverage[index] > maxCoverage) continue;
+			hashes.emplace_back(index, startPos, endPos);
 		}
 		if (hashes.size() == 0) continue;
 		count = hashes.size();

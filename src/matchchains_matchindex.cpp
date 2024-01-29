@@ -40,13 +40,14 @@ int main(int argc, char** argv)
 	size_t firstNonindexedRead;
 	{
 		std::ifstream file { indexPrefix + ".metadata", std::ios::binary };
-		size_t k, numWindows, windowSize;
+		size_t k, numWindows, windowSize, maxCoverage;
 		unsigned char hpc;
 		file.read((char*)&hpc, 1);
 		file.read((char*)&k, sizeof(size_t));
 		file.read((char*)&numWindows, sizeof(size_t));
 		file.read((char*)&windowSize, sizeof(size_t));
-		std::cerr << "index k=" << k << " n=" << numWindows << " w=" << windowSize << " hpc=" << (hpc ? 1 : 0) << std::endl;
+		file.read((char*)&maxCoverage, sizeof(size_t));
+		std::cerr << "index k=" << k << " n=" << numWindows << " w=" << windowSize << " maxcoverage=" << maxCoverage << " hpc=" << (hpc ? 1 : 0) << std::endl;
 		size_t readCount = 0;
 		file.read((char*)&countHashes, sizeof(size_t));
 		file.read((char*)&readCount, sizeof(size_t));
