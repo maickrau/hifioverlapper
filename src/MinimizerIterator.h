@@ -12,7 +12,7 @@ class MinimizerIterator
 public:
 	MinimizerIterator() = default;
 	MinimizerIterator(size_t k);
-	void init(const SequenceCharType& start, size_t posOffset);
+	void init(const MBG::SequenceCharType& start, size_t posOffset);
 	void moveChar(uint16_t added, uint16_t removed);
 	size_t minimizerPosition() const;
 	uint64_t minimizerHash() const;
@@ -20,19 +20,19 @@ private:
 	size_t k;
 	size_t windowSize;
 	std::vector<std::pair<size_t, uint64_t>> windowKmers;
-	FastHasher lastHash;
+	MBG::FastHasher lastHash;
 	size_t pos;
 };
 
 template <typename F>
-void iterateWindowchunks(const SequenceCharType& seq, size_t k, size_t numWindows, size_t windowSize, F callback)
+void iterateWindowchunks(const MBG::SequenceCharType& seq, size_t k, size_t numWindows, size_t windowSize, F callback)
 {
 	if (seq.size() < numWindows * windowSize + k) return;
 	std::vector<MinimizerIterator> windowIterators;
 	for (size_t i = 0; i < numWindows; i++)
 	{
 		windowIterators.emplace_back(k);
-		SequenceCharType startWindow { seq.begin() + i * windowSize, seq.begin() + (i+1) * windowSize + k };
+		MBG::SequenceCharType startWindow { seq.begin() + i * windowSize, seq.begin() + (i+1) * windowSize + k };
 		windowIterators[i].init(startWindow, i * windowSize);
 	}
 	std::vector<uint64_t> hashesHere;

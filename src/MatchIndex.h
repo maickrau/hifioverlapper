@@ -69,7 +69,7 @@ public:
 	void iterateWindowChunksFromRead(const std::string& readSequence, F callback) const
 	{
 		iterateWindowChunksFromReadOneWay(readSequence, callback);
-		auto rev = revCompRaw(readSequence);
+		auto rev = MBG::revCompRaw(readSequence);
 		iterateWindowChunksFromReadOneWay(rev, [callback](uint32_t startPos, uint32_t endPos, uint64_t hash)
 		{
 			startPos += 0x80000000;
@@ -80,10 +80,10 @@ public:
 	template <typename F>
 	void iterateWindowChunksFromReadOneWay(const std::string& readSequence, F callback) const
 	{
-		ErrorMasking errorMasking = ErrorMasking::Microsatellite;
+		MBG::ErrorMasking errorMasking = MBG::ErrorMasking::Microsatellite;
 		std::vector<std::string> readFiles { };
-		ReadpartIterator partIterator { 31, 1, errorMasking, 1, readFiles, false, "" };
-		partIterator.iteratePartsOfRead("", readSequence, [this, callback](const ReadInfo& read, const SequenceCharType& seq, const SequenceLengthType& poses, const std::string& raw)
+		MBG::ReadpartIterator partIterator { 31, 1, errorMasking, 1, readFiles, false, "" };
+		partIterator.iteratePartsOfRead("", readSequence, [this, callback](const MBG::ReadInfo& read, const MBG::SequenceCharType& seq, const MBG::SequenceLengthType& poses, const std::string& raw)
 		{
 			if (seq.size() < numWindows * windowSize + k) return;
 			phmap::flat_hash_set<std::tuple<uint64_t, uint32_t, uint32_t>> hashesHere;
