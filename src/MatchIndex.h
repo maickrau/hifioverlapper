@@ -69,13 +69,13 @@ public:
 	void iterateWindowChunksFromRead(const std::string& readSequence, F callback) const
 	{
 		iterateWindowChunksFromReadOneWay(readSequence, callback);
-		auto rev = MBG::revCompRaw(readSequence);
+/*		auto rev = MBG::revCompRaw(readSequence);
 		iterateWindowChunksFromReadOneWay(rev, [callback](uint32_t startPos, uint32_t endPos, uint64_t hash)
 		{
 			startPos += 0x80000000;
 			endPos += 0x80000000;
 			callback(startPos, endPos, hash);
-		});
+		});*/
 	}
 	template <typename F>
 	void iterateWindowChunksFromReadOneWay(const std::string& readSequence, F callback) const
@@ -91,11 +91,17 @@ public:
 			size_t compressedReadLength = seq.size();
 			iterateWindowchunks(seq, k, numWindows, windowSize, [this, &hashesHere, &poses, rawReadLength, compressedReadLength](const std::vector<uint64_t>& hashes, const size_t startPos, const size_t endPos)
 			{
-				uint64_t totalhash = 0;
+				uint64_t totalhashfw = 0;
 				for (auto hash : hashes)
 				{
-					totalhash *= 3;
-					totalhash += hash;
+					totalhashfw *= 17;
+					totalhashfw += hash;
+				}
+				uint64_t totalhashbw = 0;
+				for (size_t i = hashes.size()-1; i < hashes.size(); i--)
+				{
+					totalhashbw *= 17;
+					totalhashbw += hashes[i];
 				}
 				assert(endPos > startPos);
 				assert(startPos < poses.size());
@@ -107,7 +113,16 @@ public:
 				assert((realEndPos & 0x7FFFFFFF) < rawReadLength);
 				assert(realStartPos < 0x80000000);
 				assert(realEndPos < 0x80000000);
-				hashesHere.emplace(totalhash, realStartPos, realEndPos);
+				if (totalhashfw == totalhashbw) return;
+				assert(totalhashfw != totalhashbw);
+				if (totalhashfw < totalhashbw)
+				{
+					hashesHere.emplace(totalhashfw, realStartPos, realEndPos);
+				}
+				else
+				{
+					hashesHere.emplace(totalhashbw, rawReadLength - 1 - realEndPos + 0x80000000, rawReadLength - 1 - realStartPos + 0x80000000);
+				}
 			});
 			for (auto t : hashesHere)
 			{

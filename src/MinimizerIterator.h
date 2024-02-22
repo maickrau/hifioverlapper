@@ -11,7 +11,7 @@ class MinimizerIterator
 {
 public:
 	MinimizerIterator() = default;
-	MinimizerIterator(size_t k);
+	MinimizerIterator(size_t k, bool fw);
 	void init(const MBG::SequenceCharType& start, size_t posOffset);
 	void moveChar(uint16_t added, uint16_t removed);
 	size_t minimizerPosition() const;
@@ -22,6 +22,7 @@ private:
 	std::vector<std::pair<size_t, uint64_t>> windowKmers;
 	MBG::FastHasher lastHash;
 	size_t pos;
+	bool fw;
 };
 
 template <typename F>
@@ -31,7 +32,7 @@ void iterateWindowchunks(const MBG::SequenceCharType& seq, size_t k, size_t numW
 	std::vector<MinimizerIterator> windowIterators;
 	for (size_t i = 0; i < numWindows; i++)
 	{
-		windowIterators.emplace_back(k);
+		windowIterators.emplace_back(k, i < numWindows / 2);
 		MBG::SequenceCharType startWindow { seq.begin() + i * windowSize, seq.begin() + (i+1) * windowSize + k };
 		windowIterators[i].init(startWindow, i * windowSize);
 	}
