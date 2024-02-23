@@ -36,28 +36,33 @@ void iterateWindowchunks(const MBG::SequenceCharType& seq, size_t k, size_t numW
 		MBG::SequenceCharType startWindow { seq.begin() + i * windowSize, seq.begin() + (i+1) * windowSize + k };
 		windowIterators[i].init(startWindow, i * windowSize);
 	}
-	std::vector<uint64_t> hashesHere;
-	hashesHere.resize(numWindows);
+//	std::vector<uint64_t> hashesHere;
+	std::vector<uint64_t> positionsHere;
+//	hashesHere.resize(numWindows);
+	positionsHere.resize(numWindows);
 	for (size_t i = 0; i < numWindows; i++)
 	{
-		hashesHere[i] = windowIterators[i].minimizerHash();
+//		hashesHere[i] = windowIterators[i].minimizerHash();
+		positionsHere[i] = windowIterators[i].minimizerPosition();
 	}
-	callback(hashesHere, windowIterators[0].minimizerPosition(), windowIterators.back().minimizerPosition()+k-1);
+//	callback(hashesHere, windowIterators[0].minimizerPosition(), windowIterators.back().minimizerPosition()+k-1);
+	callback(positionsHere);
 	for (size_t i = 0; i + numWindows * windowSize + k < seq.size(); i++)
 	{
 		bool changed = false;
 		for (size_t j = 0; j < numWindows; j++)
 		{
 			windowIterators[j].moveChar(seq[(j+1)*windowSize + k + i], seq[(j+1)*windowSize+i]);
-			if (windowIterators[j].minimizerHash() != hashesHere[j])
+			if (windowIterators[j].minimizerPosition() != positionsHere[j])
 			{
 				changed = true;
-				hashesHere[j] = windowIterators[j].minimizerHash();
+				positionsHere[j] = windowIterators[j].minimizerPosition();
 			}
 		}
 		if (changed)
 		{
-			callback(hashesHere, windowIterators[0].minimizerPosition(), windowIterators.back().minimizerPosition()+k-1);
+//			callback(hashesHere, windowIterators[0].minimizerPosition(), windowIterators.back().minimizerPosition()+k-1);
+			callback(positionsHere);
 		}
 	}
 }

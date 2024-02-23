@@ -80,6 +80,7 @@ public:
 	template <typename F>
 	void iterateWindowChunksFromReadOneWay(const std::string& readSequence, F callback) const
 	{
+		assert(MBG::complement(10) == 10);
 		MBG::ErrorMasking errorMasking = MBG::ErrorMasking::Microsatellite;
 		std::vector<std::string> readFiles { };
 		MBG::ReadpartIterator partIterator { 31, 1, errorMasking, 1, readFiles, false, "" };
@@ -89,20 +90,27 @@ public:
 			phmap::flat_hash_set<std::tuple<uint64_t, uint32_t, uint32_t>> hashesHere;
 			size_t rawReadLength = raw.size();
 			size_t compressedReadLength = seq.size();
-			iterateWindowchunks(seq, k, numWindows, windowSize, [this, &hashesHere, &poses, rawReadLength, compressedReadLength](const std::vector<uint64_t>& hashes, const size_t startPos, const size_t endPos)
+			iterateWindowchunks(seq, k, numWindows, windowSize, [this, &hashesHere, &poses, &seq, &raw, rawReadLength, compressedReadLength](const std::vector<uint64_t>& hashPositions)
 			{
-				uint64_t totalhashfw = 0;
-				for (auto hash : hashes)
+				assert(hashPositions.size() % 2 == 0);
+				size_t startPos = hashPositions[0];
+				size_t endPos = hashPositions.back() + k - 1;
+				MBG::SequenceCharType hashableSequence;
+				for (size_t i = 0; i < hashPositions.size()/2; i++)
 				{
-					totalhashfw *= 17;
-					totalhashfw += hash;
+					size_t pos = hashPositions[i];
+					hashableSequence.insert(hashableSequence.end(), seq.begin() + pos, seq.begin() + pos + k);
 				}
-				uint64_t totalhashbw = 0;
-				for (size_t i = hashes.size()-1; i < hashes.size(); i--)
+				hashableSequence.emplace_back(10);
+				for (size_t i = hashPositions.size()/2; i < hashPositions.size(); i++)
 				{
-					totalhashbw *= 17;
-					totalhashbw += hashes[i];
+					size_t pos = hashPositions[i];
+					MBG::SequenceCharType insertSubstr { seq.begin() + pos, seq.begin() + pos + k };
+					//insertSubstr = MBG::revCompRLE(insertSubstr);
+					hashableSequence.insert(hashableSequence.end(), insertSubstr.begin(), insertSubstr.end());
 				}
+				MBG::HashType totalhashfw = MBG::hash(hashableSequence);
+				MBG::HashType totalhashbw = (totalhashfw << (MBG::HashType)64) + (totalhashfw >> (MBG::HashType)64);
 				assert(endPos > startPos);
 				assert(startPos < poses.size());
 				assert(endPos < poses.size());
@@ -117,11 +125,11 @@ public:
 				assert(totalhashfw != totalhashbw);
 				if (totalhashfw < totalhashbw)
 				{
-					hashesHere.emplace(totalhashfw, realStartPos, realEndPos);
+					hashesHere.emplace(totalhashfw + 3*(totalhashfw >> 64), realStartPos, realEndPos);
 				}
 				else
 				{
-					hashesHere.emplace(totalhashbw, rawReadLength - 1 - realEndPos + 0x80000000, rawReadLength - 1 - realStartPos + 0x80000000);
+					hashesHere.emplace(totalhashbw + 3*(totalhashbw >> 64), rawReadLength - 1 - realEndPos + 0x80000000, rawReadLength - 1 - realStartPos + 0x80000000);
 				}
 			});
 			for (auto t : hashesHere)
