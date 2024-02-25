@@ -1,6 +1,12 @@
 #include <cassert>
 #include "TwobitString.h"
 
+TwobitString::TwobitString() :
+	realSize(0),
+	bits()
+{
+}
+
 TwobitString::TwobitString(const std::string& str)
 {
 	resize(str.size());
@@ -68,6 +74,7 @@ void TwobitString::set(size_t i, uint8_t v)
 
 void TwobitString::emplace_back(uint8_t v)
 {
+	if (realSize == 0) bits.emplace_back(0);
 	realSize += 1;
 	if (realSize % 4 == 0) bits.emplace_back(0);
 	set(realSize-1, v);
@@ -87,4 +94,26 @@ std::string TwobitString::substr(size_t start, size_t size) const
 		result.push_back("ACGT"[get(start+i)]);
 	}
 	return result;
+}
+
+bool TwobitString::operator==(const TwobitString& other) const
+{
+	if (other.size() != size()) return false;
+	for (size_t i = 0; i < size(); i++)
+	{
+		if (get(i) != other.get(i)) return false;
+	}
+	return true;
+}
+
+bool TwobitString::operator<(const TwobitString& other) const
+{
+	if (size() < other.size()) return true;
+	if (size() > other.size()) return false;
+	for (size_t i = 0; i < size(); i++)
+	{
+		if (get(i) < other.get(i)) return true;
+		if (get(i) > other.get(i)) return false;
+	}
+	return false;
 }

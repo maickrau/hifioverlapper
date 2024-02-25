@@ -28,13 +28,15 @@ private:
 template <typename F>
 void iterateWindowchunks(const MBG::SequenceCharType& seq, size_t k, size_t numWindows, size_t windowSize, F callback)
 {
-	if (seq.size() < numWindows * windowSize + k) return;
+	assert(numWindows == 2);
+	const size_t middleSkip = 500;
+	if (seq.size() < numWindows * windowSize + k + middleSkip) return;
 	std::vector<MinimizerIterator> windowIterators;
 	for (size_t i = 0; i < numWindows; i++)
 	{
 		windowIterators.emplace_back(k, i < numWindows / 2);
-		MBG::SequenceCharType startWindow { seq.begin() + i * windowSize, seq.begin() + (i+1) * windowSize + k };
-		windowIterators[i].init(startWindow, i * windowSize);
+		MBG::SequenceCharType startWindow { seq.begin() + i * windowSize + i * middleSkip, seq.begin() + (i+1) * windowSize + i * middleSkip + k };
+		windowIterators[i].init(startWindow, i * windowSize + i * middleSkip);
 	}
 //	std::vector<uint64_t> hashesHere;
 	std::vector<uint64_t> positionsHere;
@@ -47,12 +49,12 @@ void iterateWindowchunks(const MBG::SequenceCharType& seq, size_t k, size_t numW
 	}
 //	callback(hashesHere, windowIterators[0].minimizerPosition(), windowIterators.back().minimizerPosition()+k-1);
 	callback(positionsHere);
-	for (size_t i = 0; i + numWindows * windowSize + k < seq.size(); i++)
+	for (size_t i = 0; i + numWindows * windowSize + middleSkip + k < seq.size(); i++)
 	{
 		bool changed = false;
 		for (size_t j = 0; j < numWindows; j++)
 		{
-			windowIterators[j].moveChar(seq[(j+1)*windowSize + k + i], seq[(j+1)*windowSize+i]);
+			windowIterators[j].moveChar(seq[(j+1)*windowSize + j * middleSkip + k + i], seq[(j+1)*windowSize+i + j * middleSkip]);
 			if (windowIterators[j].minimizerPosition() != positionsHere[j])
 			{
 				changed = true;
