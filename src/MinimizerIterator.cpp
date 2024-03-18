@@ -34,6 +34,11 @@ void MinimizerIterator::moveChar(uint16_t added, uint16_t removed)
 	// comparison rearranged, really first <= pos - windowSize but move windowSize because of underflow
 	while (windowKmers.size() > 0 && windowKmers.front().first + windowSize <= pos) windowKmers.erase(windowKmers.begin());
 	while (windowKmers.size() > 0 && windowKmers.back().second > (fw ? lastHash.getFwHash() : lastHash.getBwHash())) windowKmers.pop_back();
+	if (!fw)
+	{
+		// reverse iteration favors latest minimizers to be consistent with forward iteration favoring earliest
+		while (windowKmers.size() > 0 && windowKmers.back().second == (fw ? lastHash.getFwHash() : lastHash.getBwHash())) windowKmers.pop_back();
+	}
 	windowKmers.emplace_back(pos, fw ? lastHash.getFwHash() : lastHash.getBwHash());
 	pos += 1;
 }
