@@ -26,10 +26,9 @@ private:
 };
 
 template <typename F>
-void iterateWindowchunks(const MBG::SequenceCharType& seq, size_t k, size_t numWindows, size_t windowSize, F callback)
+void iterateWindowchunks(const MBG::SequenceCharType& seq, const size_t k, const size_t windowSize, const size_t middleSkip, F callback)
 {
-	assert(numWindows == 2);
-	const size_t middleSkip = 5000;
+	const size_t numWindows = 2;
 	if (seq.size() < numWindows * windowSize + k + middleSkip) return;
 	std::vector<MinimizerIterator> windowIterators;
 	for (size_t i = 0; i < numWindows; i++)
