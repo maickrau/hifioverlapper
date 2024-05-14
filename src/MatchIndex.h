@@ -13,6 +13,8 @@
 #include "ReadHelper.h"
 #include "MinimizerIterator.h"
 
+std::string revCompATCG(const std::string& raw);
+
 class ReadIdContainer
 {
 public:
@@ -62,7 +64,7 @@ public:
 	void iterateWindowChunksFromRead(const std::string& readSequence, bool hpc, F callback) const
 	{
 		iterateWindowChunksFromReadOneWay(readSequence, hpc, callback);
-		auto rev = revCompRaw(readSequence);
+		auto rev = revCompATCG(readSequence);
 		iterateWindowChunksFromReadOneWay(rev, hpc, [callback](uint32_t startPos, uint32_t endPos, uint64_t hash)
 		{
 			startPos += 0x80000000;

@@ -4,6 +4,37 @@
 #include "MinimizerIterator.h"
 #include "ReadHelper.h"
 
+std::string revCompATCG(const std::string& raw)
+{
+	std::string result { raw.rbegin(), raw.rend() };
+	for (size_t i = 0; i < result.size(); i++)
+	{
+		switch (result[i])
+		{
+			case 'a':
+			case 'A':
+				result[i] = 'T';
+				break;
+			case 'c':
+			case 'C':
+				result[i] = 'G';
+				break;
+			case 'g':
+			case 'G':
+				result[i] = 'C';
+				break;
+			case 't':
+			case 'T':
+				result[i] = 'A';
+				break;
+			default:
+				result[i] = 'N';
+				break;
+		}
+	}
+	return result;
+}
+
 void ReadIdContainer::addNumber(uint32_t key, __uint128_t value)
 {
 	numbers[key].emplace_back(value);
