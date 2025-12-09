@@ -36,7 +36,7 @@ public:
 		size_t size() const;
 	};
 	UnitigKmerCorrector(size_t k);
-	void build(const ReadpartIterator& iterator);
+	void build(const MBG::ReadpartIterator& iterator);
 	template <typename F>
 	void iterateRawSequences(F callback) const
 	{

@@ -6,7 +6,7 @@ MinimizerIterator::MinimizerIterator(size_t k) :
 {
 }
 
-void MinimizerIterator::init(const SequenceCharType& start, size_t posOffset)
+void MinimizerIterator::init(const MBG::SequenceCharType& start, size_t posOffset)
 {
 	assert(start.size() >= k);
 	for (size_t i = 0; i < k; i++)

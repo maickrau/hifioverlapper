@@ -1,7 +1,20 @@
 PLATFORM=$(shell uname -s)
 
+# Figure out bamtools, if we find the binary use it as the root or fallback to system libs
+BAMTOOLS_BIN=$(shell command -v bamtools 2>/dev/null)
+BAMTOOLS_PREFIX=$(patsubst %/bin/bamtools,%,$(BAMTOOLS_BIN))
+
+# Guess include and lib dirs under that prefix
+# don't use this if the user specified one
+BAMTOOLS_INCLUDE ?= $(wildcard $(BAMTOOLS_PREFIX)/include/bamtools)
+BAMTOOLS_LIB     ?= $(firstword $(wildcard $(BAMTOOLS_PREFIX)/lib64 $(BAMTOOLS_PREFIX)/lib))
+
 GPP=$(CXX)
 CPPFLAGS=-Wall -Wextra -std=c++17 -O3 -g -Izstr/src -Iparallel-hashmap/parallel_hashmap/ -Icxxopts/include -Wno-unused-parameter `pkg-config --cflags zlib` -IMBG/src -Iconcurrentqueue
+
+ifneq ($(BAMTOOLS_INCLUDE),)
+CPPFLAGS+=-I$(BAMTOOLS_INCLUDE)
+endif
 
 ODIR=obj
 BINDIR=bin
@@ -9,6 +22,10 @@ SRCDIR=src
 LIBDIR=lib
 
 LIBS=`pkg-config --libs zlib`
+ifneq ($(BAMTOOLS_LIB),)
+LIBS+=-L$(BAMTOOLS_LIB)
+endif
+LIBS+=-lbamtools
 
 _DEPS = MatchIndex.h MinimizerIterator.h TwobitString.h ReadStorage.h UnitigKmerCorrector.h UnitigStorage.h ReadMatchposStorage.h
 DEPS = $(patsubst %, $(SRCDIR)/%, $(_DEPS))

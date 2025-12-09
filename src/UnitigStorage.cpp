@@ -3,7 +3,7 @@
 #include <cassert>
 #include "UnitigStorage.h"
 
-HashType reverseHash(HashType fwHash)
+MBG::HashType reverseHash(MBG::HashType fwHash)
 {
 	return (fwHash << 64) + (fwHash >> 64);
 }
@@ -13,7 +13,7 @@ UnitigStorage::UnitigStorage(size_t k) :
 {
 }
 
-std::pair<size_t, bool> UnitigStorage::getNode(HashType fwHash)
+std::pair<size_t, bool> UnitigStorage::getNode(MBG::HashType fwHash)
 {
 	auto revhash = reverseHash(fwHash);
 	std::pair<size_t, bool> kmer;
@@ -45,7 +45,7 @@ std::pair<size_t, bool> UnitigStorage::getNode(HashType fwHash)
 	}
 }
 
-std::pair<size_t, bool> UnitigStorage::getNodeOrNull(HashType fwHash) const
+std::pair<size_t, bool> UnitigStorage::getNodeOrNull(MBG::HashType fwHash) const
 {
 	auto revhash = reverseHash(fwHash);
 	if (revhash < fwHash)
@@ -59,7 +59,7 @@ std::pair<size_t, bool> UnitigStorage::getNodeOrNull(HashType fwHash) const
 	return std::make_pair(found->second, true);
 }
 
-std::tuple<size_t, size_t, std::vector<std::pair<size_t, bool>>> UnitigStorage::getPath(const std::vector<HashType>& hashes) const
+std::tuple<size_t, size_t, std::vector<std::pair<size_t, bool>>> UnitigStorage::getPath(const std::vector<MBG::HashType>& hashes) const
 {
 	std::vector<std::pair<size_t, bool>> unitigPath;
 	size_t leftClip = 0;
@@ -77,7 +77,7 @@ std::tuple<size_t, size_t, std::vector<std::pair<size_t, bool>>> UnitigStorage::
 		currentUnitigOffset = kmerPositionInUnitig[kmer.first].second;
 		if (!kmer.second)
 		{
-			currentUnitig = reverse(currentUnitig);
+			currentUnitig = MBG::reverse(currentUnitig);
 			currentUnitigOffset = unitigLength[currentUnitig.first] - 1 - currentUnitigOffset;
 		}
 		if (currentUnitig != previousUnitig || currentUnitigOffset != previousUnitigOffset+1)
@@ -103,15 +103,15 @@ void UnitigStorage::addEdge(std::pair<size_t, bool> from, std::pair<size_t, bool
 	{
 		uniqueEdge[from] = std::numeric_limits<uint32_t>::max()-1;
 	}
-	if (uniqueEdge[reverse(to)] == std::numeric_limits<uint32_t>::max())
+	if (uniqueEdge[MBG::reverse(to)] == std::numeric_limits<uint32_t>::max())
 	{
-		uniqueEdge[reverse(to)] = pairToNum(reverse(from));
+		uniqueEdge[MBG::reverse(to)] = pairToNum(MBG::reverse(from));
 	}
-	else if (uniqueEdge[reverse(to)] != pairToNum(reverse(from)))
+	else if (uniqueEdge[MBG::reverse(to)] != pairToNum(MBG::reverse(from)))
 	{
-		uniqueEdge[reverse(to)] = std::numeric_limits<uint32_t>::max()-1;
+		uniqueEdge[MBG::reverse(to)] = std::numeric_limits<uint32_t>::max()-1;
 	}
-	auto c = canon(from, to);
+	auto c = MBG::canon(from, to);
 	auto key = std::make_pair(pairToNum(c.first), pairToNum(c.second));
 	assert(kmerOverlap.count(key) == 0 || kmerOverlap.at(key) == overlap);
 	kmerOverlap[key] = overlap;
@@ -138,7 +138,7 @@ std::string UnitigStorage::getSequenceBpClip(const std::vector<std::pair<size_t,
 		}
 		else
 		{
-			auto c = canon(path[i-1], path[i]);
+			auto c = MBG::canon(path[i-1], path[i]);
 			size_t overlap = unitigEdgeOverlap.at(std::make_pair(pairToNum(c.first), pairToNum(c.second)));
 			if (path[i].second)
 			{
@@ -161,7 +161,7 @@ std::string UnitigStorage::getSequenceBpClip(const std::vector<std::pair<size_t,
 			}
 		}
 		add = unitigSequences[path[i].first].substr(leftClipBpHere, unitigSequences[path[i].first].size() - leftClipBpHere - rightClipBpHere);
-		if (!path[i].second) add = revCompRaw(add);
+		if (!path[i].second) add = MBG::revCompRaw(add);
 		result += add;
 	}
 	return result;
@@ -188,7 +188,7 @@ std::string UnitigStorage::getSequence(const std::vector<std::pair<size_t, bool>
 		}
 		else
 		{
-			auto c = canon(path[i-1], path[i]);
+			auto c = MBG::canon(path[i-1], path[i]);
 			size_t overlap = unitigEdgeOverlap.at(std::make_pair(pairToNum(c.first), pairToNum(c.second)));
 			if (path[i].second)
 			{
@@ -211,7 +211,7 @@ std::string UnitigStorage::getSequence(const std::vector<std::pair<size_t, bool>
 			}
 		}
 		add = unitigSequences[path[i].first].substr(leftClipBp, unitigSequences[path[i].first].size() - leftClipBp - rightClipBp);
-		if (!path[i].second) add = revCompRaw(add);
+		if (!path[i].second) add = MBG::revCompRaw(add);
 		result += add;
 	}
 	return result;
@@ -236,12 +236,12 @@ void UnitigStorage::buildUnitigGraph()
 			beginUnitig(fw);
 			continue;
 		}
-		if (uniqueEdge[fw] < std::numeric_limits<uint32_t>::max()-1 && uniqueEdge[reverse(numToPair(uniqueEdge[fw]))] != pairToNum(bw))
+		if (uniqueEdge[fw] < std::numeric_limits<uint32_t>::max()-1 && uniqueEdge[MBG::reverse(numToPair(uniqueEdge[fw]))] != pairToNum(bw))
 		{
 			beginUnitig(bw);
 			continue;
 		}
-		if (uniqueEdge[bw] < std::numeric_limits<uint32_t>::max()-1 && uniqueEdge[reverse(numToPair(uniqueEdge[bw]))] != pairToNum(fw))
+		if (uniqueEdge[bw] < std::numeric_limits<uint32_t>::max()-1 && uniqueEdge[MBG::reverse(numToPair(uniqueEdge[bw]))] != pairToNum(fw))
 		{
 			beginUnitig(fw);
 			continue;
@@ -284,7 +284,7 @@ void UnitigStorage::buildUnitigGraph()
 		size_t fromPos = kmerPositionInUnitig[kmerFrom.first].second;
 		if (!kmerFrom.second)
 		{
-			unitigFrom = reverse(unitigFrom);
+			unitigFrom = MBG::reverse(unitigFrom);
 			fromPos = unitigLength[unitigFrom.first] - 1 - fromPos;
 		}
 		assert(fromPos == 0 || fromPos == unitigLength[unitigFrom.first]-1);
@@ -293,12 +293,12 @@ void UnitigStorage::buildUnitigGraph()
 		size_t toPos = kmerPositionInUnitig[kmerTo.first].second;
 		if (!kmerTo.second)
 		{
-			unitigTo = reverse(unitigTo);
+			unitigTo = MBG::reverse(unitigTo);
 			toPos = unitigLength[unitigTo.first] - 1 - toPos;
 		}
 		assert(toPos == 0 || toPos == unitigLength[unitigTo.first]-1);
 		if (toPos != 0) continue;
-		auto c = canon(unitigFrom, unitigTo);
+		auto c = MBG::canon(unitigFrom, unitigTo);
 		auto key = std::make_pair(pairToNum(c.first), pairToNum(c.second));
 		assert(unitigEdgeOverlap.count(key) == 0);
 		unitigEdgeOverlap[key] = pair.second;
@@ -329,10 +329,10 @@ void UnitigStorage::beginUnitig(std::pair<size_t, bool> start)
 		unitigLength[thisUnitig] += 1;
 		if (uniqueEdge[pos] >= std::numeric_limits<uint32_t>::max()-1) break;
 		std::pair<size_t, bool> next = numToPair(uniqueEdge[pos]);
-		if (uniqueEdge[reverse(next)] != pairToNum(reverse(pos))) break;
+		if (uniqueEdge[MBG::reverse(next)] != pairToNum(MBG::reverse(pos))) break;
 		if (next.first == pos.first) break;
 		if (next.first == start.first) break;
-		auto c = canon(pos, next);
+		auto c = MBG::canon(pos, next);
 		auto key = std::make_pair(pairToNum(c.first), pairToNum(c.second));
 		bpOffset += kmerSize - kmerOverlap.at(key);
 		pos = next;
@@ -411,7 +411,7 @@ void UnitigStorage::addKmerSequence(std::pair<size_t, bool> kmer, const std::str
 void UnitigStorage::finalizeSequences()
 {
 	{
-		phmap::flat_hash_map<HashType, uint32_t> tmp;
+		phmap::flat_hash_map<MBG::HashType, uint32_t> tmp;
 		std::swap(tmp, hashToNode);
 	}
 	for (size_t i = 0; i < kmerSequenceLoaded.size(); i++)
@@ -463,7 +463,7 @@ size_t UnitigStorage::totalBps() const
 size_t UnitigStorage::unitigMinusEdgeLength(const std::pair<size_t, bool> fromUnitig, const std::pair<size_t, bool> toUnitig) const
 {
 	size_t result = unitigSequences[toUnitig.first].size();
-	auto c = canon(fromUnitig, toUnitig);
+	auto c = MBG::canon(fromUnitig, toUnitig);
 	size_t overlap = unitigEdgeOverlap.at(std::make_pair(pairToNum(c.first), pairToNum(c.second)));
 	assert(overlap < result);
 	return result - overlap;

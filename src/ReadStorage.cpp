@@ -36,16 +36,16 @@ const std::vector<size_t>& ReadStorage::getPositions(size_t i) const
 	return positions[i];
 }
 
-const std::vector<HashType>& ReadStorage::getHashes(size_t i) const
+const std::vector<MBG::HashType>& ReadStorage::getHashes(size_t i) const
 {
 	return hashes[i];
 }
 
-void ReadStorage::buildHashes(const ReadpartIterator& partIterator)
+void ReadStorage::buildHashes(const MBG::ReadpartIterator& partIterator)
 {
 	for (size_t i = 0; i < sequences.size(); i++)
 	{
-		partIterator.iterateHashesOfRead(names[i], sequences[i].toString(), [this](const ReadInfo& read, const SequenceCharType& seq, const SequenceLengthType& poses, const std::string& rawSeq, const std::vector<size_t>& positions, const std::vector<HashType>& hashes)
+		partIterator.iterateHashesOfRead(names[i], sequences[i].toString(), [this](const MBG::ReadInfo& read, const MBG::SequenceCharType& seq, const MBG::SequenceLengthType& poses, const std::string& rawSeq, const std::vector<size_t>& positions, const std::vector<MBG::HashType>& hashes)
 		{
 			this->positions.push_back(positions);
 			this->hashes.push_back(hashes);
@@ -55,7 +55,7 @@ void ReadStorage::buildHashes(const ReadpartIterator& partIterator)
 	assert(hashes.size() == sequences.size());
 }
 
-void ReadStorage::buildKmers(const HashList& hashlist)
+void ReadStorage::buildKmers(const MBG::HashList& hashlist)
 {
 	kmers.resize(hashes.size());
 	for (size_t i = 0; i < hashes.size(); i++)

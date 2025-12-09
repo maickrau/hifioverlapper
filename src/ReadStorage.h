@@ -20,7 +20,7 @@ public:
 	{
 		std::mutex nameMutex;
 		std::vector<std::string> files { filename };
-		iterateReadsMultithreaded(files, numThreads, [this, store, &nameMutex, callback](const ReadInfo& info, const std::string& sequence)
+		MBG::iterateReadsMultithreaded(files, numThreads, [this, store, &nameMutex, callback](const MBG::ReadInfo& info, const std::string& sequence)
 		{
 			size_t name = 0;
 			{
@@ -89,9 +89,9 @@ public:
 	std::string getSequence(size_t i) const;
 	const std::vector<size_t>& getRawReadLengths() const;
 	const std::vector<size_t>& getPositions(size_t i) const;
-	const std::vector<HashType>& getHashes(size_t i) const;
-	void buildHashes(const ReadpartIterator& partIterator);
-	void buildKmers(const HashList& hashlist);
+	const std::vector<MBG::HashType>& getHashes(size_t i) const;
+	void buildHashes(const MBG::ReadpartIterator& partIterator);
+	void buildKmers(const MBG::HashList& hashlist);
 	size_t size() const;
 	void setMemoryIterables(const std::vector<size_t>& iterables);
 private:
@@ -99,7 +99,7 @@ private:
 	std::vector<size_t> rawReadLengths;
 	std::vector<TwobitString> sequences;
 	std::vector<std::vector<size_t>> positions;
-	std::vector<std::vector<HashType>> hashes;
+	std::vector<std::vector<MBG::HashType>> hashes;
 	std::vector<std::vector<std::pair<size_t, bool>>> kmers;
 };
 

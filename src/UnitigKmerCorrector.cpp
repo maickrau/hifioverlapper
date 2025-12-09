@@ -19,7 +19,7 @@ std::pair<size_t, bool> findSimpleBubbleEnd(const VectorWithDirection<std::vecto
 	for (auto edge : edges[startNode])
 	{
 		std::pair<size_t, bool> pos = edge;
-		while (edges[pos].size() == 1 && edges[reverse(pos)].size() == 1)
+		while (edges[pos].size() == 1 && edges[MBG::reverse(pos)].size() == 1)
 		{
 			if (usedAlleles.count(pos.first) == 1) return std::make_pair(std::numeric_limits<size_t>::max(), true);
 			usedAlleles.insert(pos.first);
@@ -31,8 +31,8 @@ std::pair<size_t, bool> findSimpleBubbleEnd(const VectorWithDirection<std::vecto
 		}
 		else if (pos != bubbleEnd) return std::make_pair(std::numeric_limits<size_t>::max(), true);
 	}
-	if (edges[reverse(bubbleEnd)].size() != edges[startNode].size()) return std::make_pair(std::numeric_limits<size_t>::max(), true);
-	for (auto edge : edges[reverse(bubbleEnd)])
+	if (edges[MBG::reverse(bubbleEnd)].size() != edges[startNode].size()) return std::make_pair(std::numeric_limits<size_t>::max(), true);
+	for (auto edge : edges[MBG::reverse(bubbleEnd)])
 	{
 		if (usedAlleles.count(edge.first) == 0) return std::make_pair(std::numeric_limits<size_t>::max(), true);
 	}
@@ -40,11 +40,11 @@ std::pair<size_t, bool> findSimpleBubbleEnd(const VectorWithDirection<std::vecto
 	return bubbleEnd;
 }
 
-void UnitigKmerCorrector::build(const ReadpartIterator& partIterator)
+void UnitigKmerCorrector::build(const MBG::ReadpartIterator& partIterator)
 {
 	std::mutex mutex;
 	std::cerr << "collect k-mers" << std::endl;
-	partIterator.iterateHashes([this, &mutex](const ReadInfo& read, const SequenceCharType& seq, const SequenceLengthType& poses, const std::string& rawSeq, const std::vector<size_t>& positions, const std::vector<HashType>& hashes)
+	partIterator.iterateHashes([this, &mutex](const MBG::ReadInfo& read, const MBG::SequenceCharType& seq, const MBG::SequenceLengthType& poses, const std::string& rawSeq, const std::vector<size_t>& positions, const std::vector<MBG::HashType>& hashes)
 	{
 		std::lock_guard lock { mutex };
 		std::pair<size_t, bool> last { std::numeric_limits<size_t>::max(), true };
@@ -63,7 +63,7 @@ void UnitigKmerCorrector::build(const ReadpartIterator& partIterator)
 	unitigs.buildUnitigGraph();
 	std::cerr << unitigs.numUnitigs() << " unitigs" << std::endl;
 	std::cerr << "build unitig sequences and collect read paths" << std::endl;
-	partIterator.iterateHashes([this, &mutex](const ReadInfo& read, const SequenceCharType& seq, const SequenceLengthType& poses, const std::string& rawSeq, const std::vector<size_t>& positions, const std::vector<HashType>& hashes)
+	partIterator.iterateHashes([this, &mutex](const MBG::ReadInfo& read, const MBG::SequenceCharType& seq, const MBG::SequenceLengthType& poses, const std::string& rawSeq, const std::vector<size_t>& positions, const std::vector<MBG::HashType>& hashes)
 	{
 		std::lock_guard lock { mutex };
 		for (size_t i = 0; i < hashes.size(); i++)
@@ -116,7 +116,7 @@ void UnitigKmerCorrector::addPathsRecursive(std::vector<std::vector<std::pair<si
 	for (auto edge : allowedEdges[pos])
 	{
 		if (!allowedNodes[edge.first]) continue;
-		if (bwVisited.count(reverse(edge)) == 0) continue;
+		if (bwVisited.count(MBG::reverse(edge)) == 0) continue;
 		addPathsRecursive(result, currentPath, edge, end, bwVisited, allowedNodes, allowedEdges, maxPaths);
 		if (result.size() > maxPaths) return;
 	}
@@ -291,7 +291,7 @@ std::vector<std::pair<size_t, bool>> UnitigKmerCorrector::getUniqueReplacementPa
 	assert(start.first < allowedEdges.size());
 	phmap::flat_hash_set<std::pair<size_t, bool>> bwVisited;
 	std::priority_queue<std::pair<size_t, std::pair<size_t, bool>>, std::vector<std::pair<size_t, std::pair<size_t, bool>>>, DistantKmerComparer> checkStack;
-	checkStack.emplace(0, reverse(end));
+	checkStack.emplace(0, MBG::reverse(end));
 	while (checkStack.size() > 0)
 	{
 		auto topandlen = checkStack.top();
@@ -362,7 +362,7 @@ void UnitigKmerCorrector::assignLocalGraph(LocalGraph& result, const std::vector
 			{
 				hasBwCoverage[thislocal.first] = true;
 			}
-			if (lastLocal.first != std::numeric_limits<size_t>::max()) localEdgeCoverage[canon(lastLocal, thislocal)] += 1;
+			if (lastLocal.first != std::numeric_limits<size_t>::max()) localEdgeCoverage[MBG::canon(lastLocal, thislocal)] += 1;
 			lastLocal = thislocal;
 		}
 	}
@@ -384,12 +384,12 @@ void UnitigKmerCorrector::assignLocalGraph(LocalGraph& result, const std::vector
 		if (pair.second >= minSafeCoverage)
 		{
 			result.safeEdges[pair.first.first].emplace_back(pair.first.second);
-			if (reverse(pair.first.second) != pair.first.first || reverse(pair.first.first) != pair.first.second) result.safeEdges[reverse(pair.first.second)].emplace_back(reverse(pair.first.first));
+			if (MBG::reverse(pair.first.second) != pair.first.first || MBG::reverse(pair.first.first) != pair.first.second) result.safeEdges[MBG::reverse(pair.first.second)].emplace_back(MBG::reverse(pair.first.first));
 		}
 		if (pair.second >= minAmbiguousCoverage)
 		{
 			result.ambiguousEdges[pair.first.first].emplace_back(pair.first.second);
-			if (reverse(pair.first.second) != pair.first.first || reverse(pair.first.first) != pair.first.second) result.ambiguousEdges[reverse(pair.first.second)].emplace_back(reverse(pair.first.first));
+			if (MBG::reverse(pair.first.second) != pair.first.first || MBG::reverse(pair.first.first) != pair.first.second) result.ambiguousEdges[MBG::reverse(pair.first.second)].emplace_back(MBG::reverse(pair.first.first));
 		}
 	}
 }
